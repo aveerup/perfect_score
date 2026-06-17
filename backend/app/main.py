@@ -119,7 +119,7 @@ def set_auth_cookies(response: Response, auth_session: dict[str, Any]) -> None:
         max_age=auth_session["expires_in"],
         httponly=True,
         secure=AUTH_COOKIE_SECURE,
-        samesite="lax",
+        samesite="none",
         path="/",
     )
     response.set_cookie(
@@ -128,7 +128,7 @@ def set_auth_cookies(response: Response, auth_session: dict[str, Any]) -> None:
         max_age=60 * 60 * 24 * 30,
         httponly=True,
         secure=AUTH_COOKIE_SECURE,
-        samesite="lax",
+        samesite="none",
         path="/",
     )
 
