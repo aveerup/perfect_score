@@ -1,0 +1,234 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-on-primary: var(--on-primary);
+  
+  --color-secondary: var(--secondary);
+  --color-secondary-container: var(--secondary-container);
+  --color-secondary-foreground: var(--secondary-foreground);
+  
+  --color-surface: var(--surface);
+  --color-on-surface: var(--on-surface);
+  --color-surface-container: var(--surface-container);
+  --color-surface-container-low: var(--surface-container-low);
+  --color-surface-container-high: var(--surface-container-high);
+  --color-surface-container-lowest: var(--surface-container-lowest);
+  
+  --color-outline: var(--outline);
+  --color-accent: var(--grape-600);
+  --color-error: var(--error);
+  --color-destructive: var(--error);
+
+  --color-grape-50: #f5f3ff;
+  --color-grape-100: #ede9fe;
+  --color-grape-400: #c084fc;
+  --color-grape-500: #9333ea;
+  --color-grape-600: var(--grape-600);
+  --color-grape-700: #6b21a8;
+  
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--primary);
+
+  --font-sans: var(--font-inter);
+  --font-bengali: var(--font-hind-siliguri);
+  --font-serif: var(--font-prata);
+  --font-heading: var(--font-joyme);
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, monospace;
+
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius: 0px;
+
+  --spacing-base: 8px;
+}
+
+:root {
+  --background: #FAFAFA; /* Soft White */
+  --foreground: #000000; /* Pure Black */
+  
+  --surface: #FFFFFF;
+  --on-surface: #000000;
+  
+  --primary: #000000; 
+  --primary-foreground: #FAFAFA;
+  --on-primary: #FAFAFA;
+  
+  --grape-600: #7c2dbb;
+  --accent: var(--grape-600);
+  --accent-foreground: #FFFFFF;
+  
+  --secondary: #737373; 
+  --secondary-container: #F5F5F5; 
+  --secondary-foreground: #000000;
+  
+  --outline: #D6D3D1; 
+  --outline-variant: #E7E5E4;
+  
+  --surface-container: #F5F5F5;
+  --surface-container-low: #FAFAFA;
+  --surface-container-high: #D6D3D1;
+  --surface-container-lowest: #FFFFFF;
+  
+  --error: #FF3B30; 
+  --border: #D6D3D1;
+  --input: #737373;
+  --radius: 1rem;
+}
+
+.dark {
+  --background: #020617; /* Slate 950 */
+  --foreground: #F8FAFC;
+  
+  --surface: #0F172A; /* Slate 900 */
+  --on-surface: #F8FAFC;
+  
+  --primary: #F8FAFC;
+  --primary-foreground: #020617;
+  --on-primary: #020617;
+  
+  --grape-600: #a855f7; /* Brighter purple for dark mode */
+  --accent: var(--grape-600);
+  
+  --secondary: #94A3B8;
+  --secondary-container: #1E293B;
+  
+  --outline: #334155;
+  --border: #1E293B;
+  
+  --surface-container: #1E293B;
+  --surface-container-low: #0F172A;
+  --surface-container-high: #334155;
+  --surface-container-lowest: #020617;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-primary/50;
+    box-sizing: border-box;
+  }
+  
+  html {
+    scroll-behavior: smooth;
+  }
+  
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Thin 1px dividers */
+  hr, .divider {
+    border: 0;
+    border-top: 1px solid var(--border);
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-slate-200 rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-slate-300;
+  }
+
+  /* Selection */
+  ::selection {
+    background: rgba(37, 99, 235, 0.1);
+    color: var(--primary);
+  }
+}
+
+/* Page transition animation */
+.animate-in {
+  animation: fade-up 350ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes fade-up {
+  from { 
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to { 
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Typing cursor blink */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.typing-cursor {
+  animation: blink 1s step-end infinite;
+}
+
+/* Bengali font utility */
+.font-bengali {
+  font-family: var(--font-hind-siliguri), 'Noto Sans Bengali', sans-serif;
+}
+
+/* Modern Card Lift Effect */
+.card-hover-lift {
+  @apply transition-all duration-300 hover:-translate-y-2 hover:shadow-2xl hover:shadow-grape-600/20;
+}
+
+/* Accent low-opacity bg shorthand */
+.bg-accent\/8 {
+  background-color: color-mix(in srgb, var(--grape-600) 8%, transparent);
+}
+
+/* ─── Glow & Shimmer Utilities ─── */
+
+.glow-grape {
+  box-shadow: 0 0 40px -10px var(--grape-600);
+}
+
+.btn-glow {
+  @apply relative overflow-hidden transition-all duration-300;
+  box-shadow: 0 4px 15px -1px rgba(124, 45, 187, 0.3);
+}
+
+.btn-glow:hover {
+  box-shadow: 0 10px 25px -1px rgba(124, 45, 187, 0.5);
+  @apply -translate-y-0.5;
+}
+
+.btn-glow::after {
+  content: '';
+  @apply absolute inset-0 opacity-0 transition-opacity duration-300 pointer-events-none;
+  background: radial-gradient(600px circle at var(--x, 0) var(--y, 0), rgba(255,255,255,0.2), transparent 40%);
+}
+
+.btn-glow:hover::after {
+  @apply opacity-100;
+}
+
+.text-gradient {
+  @apply bg-clip-text text-transparent bg-gradient-to-r from-grape-600 to-grape-400;
+}
+
+/* Animated glass effect */
+.glass-panel {
+  @apply bg-white/70 backdrop-blur-md border border-white/20 shadow-xl;
+}

@@ -1,0 +1,1 @@
+"""Perfect Score FastAPI backend."""
