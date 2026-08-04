@@ -37,7 +37,7 @@ export function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
         setResults([
           ...response.practice.map((item) => ({ type: "Practice", title: item.title, href: `/practice/${item.id}`, category: item.skill })),
           ...response.lectures.map((item) => ({ type: "Lecture", title: item.title, href: `/lectures/${item.id}`, category: item.skill })),
-          ...response.vocabulary.map((item) => ({ type: "Vocabulary", title: item.word, href: `/vocab/${encodeURIComponent(item.category)}`, category: item.category })),
+          ...response.vocabulary.map((item) => ({ type: "Vocabulary", title: item.word, href: `/vocab/${encodeURIComponent(item.group)}`, category: item.group })),
         ].slice(0, 8));
       } catch {
         setResults([]);

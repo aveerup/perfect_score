@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import logging
 import os
 from pathlib import Path
 from statistics import mean
 from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, Cookie, Depends, FastAPI, HTTPException, Query, Response, status
+from fastapi import APIRouter, Cookie, Depends, FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 import httpx2
 from dotenv import load_dotenv
@@ -23,6 +25,7 @@ from .schemas import (
     OnboardingRequest,
     PasswordResetRequest,
     PasswordUpdateRequest,
+    PlanPartCompletionRequest,
     ProfileUpdate,
     SearchResponse,
     SessionCreateRequest,
@@ -35,11 +38,19 @@ from .schemas import (
 from . import repository
 
 
+logger = logging.getLogger(__name__)
+
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_KEY = os.getenv("SUPABASE_PUBLISHABLE_KEY") or os.getenv("SUPABASE_ANON_KEY", "")
 AUTH_COOKIE_SECURE = os.getenv("AUTH_COOKIE_SECURE", "false").lower() == "true"
+AUTH_COOKIE_SAMESITE = os.getenv(
+    "AUTH_COOKIE_SAMESITE",
+    "none" if AUTH_COOKIE_SECURE else "lax",
+).lower()
+if AUTH_COOKIE_SAMESITE == "none" and not AUTH_COOKIE_SECURE:
+    AUTH_COOKIE_SAMESITE = "lax"
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
 CORS_ORIGINS = [
     origin.strip()
@@ -66,6 +77,17 @@ app.add_middleware(
 
 security = HTTPBearer(auto_error=False)
 router = APIRouter(prefix="/api")
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(_request: Request, exc: Exception) -> JSONResponse:
+    logger.exception("Unhandled API error", exc_info=exc)
+    detail = str(exc) if os.getenv("APP_ENV", "development") == "development" else "Internal server error"
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": detail},
+    )
+
 
 def supabase_headers(access_token: str | None = None) -> dict[str, str]:
     if not SUPABASE_URL or not SUPABASE_KEY:
@@ -119,7 +141,7 @@ def set_auth_cookies(response: Response, auth_session: dict[str, Any]) -> None:
         max_age=auth_session["expires_in"],
         httponly=True,
         secure=AUTH_COOKIE_SECURE,
-        samesite="none",
+        samesite=AUTH_COOKIE_SAMESITE,
         path="/",
     )
     response.set_cookie(
@@ -128,8 +150,23 @@ def set_auth_cookies(response: Response, auth_session: dict[str, Any]) -> None:
         max_age=60 * 60 * 24 * 30,
         httponly=True,
         secure=AUTH_COOKIE_SECURE,
-        samesite="none",
+        samesite=AUTH_COOKIE_SAMESITE,
         path="/",
+    )
+
+
+def delete_auth_cookies(response: Response) -> None:
+    response.delete_cookie(
+        "ps_access_token",
+        path="/",
+        secure=AUTH_COOKIE_SECURE,
+        samesite=AUTH_COOKIE_SAMESITE,
+    )
+    response.delete_cookie(
+        "ps_refresh_token",
+        path="/",
+        secure=AUTH_COOKIE_SECURE,
+        samesite=AUTH_COOKIE_SAMESITE,
     )
 
 
@@ -640,8 +677,7 @@ def refresh_session(
         ) from exc
 
     if supabase_response.status_code != status.HTTP_200_OK:
-        response.delete_cookie("ps_access_token", path="/")
-        response.delete_cookie("ps_refresh_token", path="/")
+        delete_auth_cookies(response)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Session expired",
@@ -657,8 +693,7 @@ def logout(
     response: Response,
     access_token: str = Depends(require_access_token),
 ) -> dict[str, bool]:
-    response.delete_cookie("ps_access_token", path="/")
-    response.delete_cookie("ps_refresh_token", path="/")
+    delete_auth_cookies(response)
 
     try:
         supabase_response = httpx2.post(
@@ -777,7 +812,16 @@ def practice(
     difficulty: str | None = Query(default=None),
     user: dict[str, Any] = Depends(require_supabase_user),
 ) -> list[dict[str, Any]]:
-    items = repository.list_tests(user["id"], "practice")
+    items = [
+        item for item in repository.list_tests(user["id"], "practice")
+        if item["skill"] not in {"R", "W"}
+    ]
+    if not skill or skill in {"All", "L"}:
+        items.extend(repository.list_listening_tests(user["id"]))
+    if not skill or skill in {"All", "R"}:
+        items.extend(repository.list_reading_tests(user["id"]))
+    if not skill or skill in {"All", "W"}:
+        items.extend(repository.list_writing_tests(user["id"]))
     if skill and skill != "All":
         items = [item for item in items if item["skill"] == skill]
     if difficulty and difficulty != "All":
@@ -790,6 +834,33 @@ def get_practice(
     practice_id: str,
     _: dict[str, Any] = Depends(require_supabase_user),
 ) -> dict[str, Any]:
+    listening_test = repository.get_listening_test(practice_id)
+    if listening_test:
+        section = listening_test["sections"][0]
+        return {
+            **listening_test,
+            **{key: value for key, value in section.items() if key not in {"id", "position"}},
+            "activeSection": section["name"],
+            "questionCount": len(section["questions"]),
+        }
+    reading_test = repository.get_reading_test(practice_id)
+    if reading_test:
+        section = reading_test["sections"][0]
+        return {
+            **reading_test,
+            **{key: value for key, value in section.items() if key not in {"id", "position"}},
+            "activeSection": section["name"],
+            "questionCount": len(section["questions"]),
+        }
+    writing_test = repository.get_writing_test(practice_id)
+    if writing_test:
+        section = writing_test["sections"][0]
+        return {
+            **writing_test,
+            **{key: value for key, value in section.items() if key not in {"id", "position"}},
+            "activeSection": section["name"],
+            "questionCount": len(section["questions"]),
+        }
     test = repository.get_test(practice_id)
     if not test or test["testType"] != "practice":
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Practice set not found")
@@ -809,7 +880,14 @@ def create_practice_session(
     user: dict[str, Any] = Depends(require_supabase_user),
 ) -> dict[str, Any]:
     detail = get_practice(practice_id, user)
-    session = repository.create_attempt(user["id"], practice_id)
+    if repository.listening_test_no(practice_id) is not None:
+        session = repository.create_listening_attempt(user["id"], practice_id)
+    elif repository.reading_test_no(practice_id) is not None:
+        session = repository.draft_reading_attempt(practice_id)
+    elif repository.writing_test_key(practice_id) is not None:
+        session = repository.draft_writing_attempt(practice_id)
+    else:
+        session = repository.create_attempt(user["id"], practice_id)
     session["mode"] = payload.mode
     session["practiceId"] = practice_id
     return {"session": session, "practice": detail}
@@ -821,9 +899,14 @@ def update_practice_session(
     payload: SessionPatchRequest,
     user: dict[str, Any] = Depends(require_supabase_user),
 ) -> dict[str, Any]:
-    session = repository.update_attempt(
-        user["id"], session_id, payload.model_dump(exclude_none=True)
-    )
+    values = payload.model_dump(exclude_none=True)
+    session = repository.update_attempt(user["id"], session_id, values)
+    if not session:
+        session = repository.update_listening_attempt(user["id"], session_id, values)
+    if not session:
+        session = repository.update_reading_attempt(user["id"], session_id, values)
+    if not session:
+        session = repository.update_writing_attempt(user["id"], session_id, values)
     if not session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
     return session
@@ -837,7 +920,105 @@ def submit_practice_session(
 ) -> dict[str, Any]:
     attempt = repository.get_attempt(user["id"], session_id)
     if not attempt:
+        listening_attempt = repository.get_listening_attempt(user["id"], session_id)
+        if listening_attempt:
+            practice_id = repository.listening_practice_id(listening_attempt["test_no"])
+            test = repository.get_listening_test(practice_id, include_answers=True)
+            if not test:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Practice set not found")
+            answers = {**(listening_attempt["answers"] or {}), **payload.answers}
+            score, result, _graded = repository.score_listening_test(test, answers)
+            result["sessionId"] = session_id
+            result["durationSeconds"] = payload.durationSeconds
+            session = repository.submit_listening_attempt(
+                user["id"],
+                session_id,
+                payload.answers,
+                payload.durationSeconds,
+                score,
+                result,
+            )
+            return {"session": session, "result": result}
+
+        reading_attempt = repository.get_reading_attempt(user["id"], session_id)
+        if reading_attempt:
+            practice_id = repository.reading_practice_id(reading_attempt["test_no"])
+            test = repository.get_reading_test(practice_id, include_answers=True)
+            if not test:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Practice set not found")
+            answers = {**(reading_attempt["answers"] or {}), **payload.answers}
+            score, result, _graded = repository.score_reading_test(test, answers)
+            result["sessionId"] = session_id
+            result["durationSeconds"] = payload.durationSeconds
+            session = repository.submit_reading_attempt(
+                user["id"],
+                session_id,
+                payload.answers,
+                payload.durationSeconds,
+                score,
+                result,
+            )
+            return {"session": session, "result": result}
+
+        if repository.reading_test_no(session_id) is not None:
+            test = repository.get_reading_test(session_id, include_answers=True)
+            if not test:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Practice set not found")
+            score, result, _graded = repository.score_reading_test(test, payload.answers)
+            attempt_session = repository.create_reading_attempt(user["id"], session_id)
+            result["sessionId"] = attempt_session["id"]
+            result["durationSeconds"] = payload.durationSeconds
+            session = repository.submit_reading_attempt(
+                user["id"],
+                attempt_session["id"],
+                payload.answers,
+                payload.durationSeconds,
+                score,
+                result,
+            )
+            return {"session": session, "result": result}
+
+        writing_attempt = repository.get_writing_attempt(user["id"], session_id)
+        if writing_attempt:
+            practice_id = repository.writing_practice_id(writing_attempt["task_type"], writing_attempt["set_no"])
+            test = repository.get_writing_test(practice_id, include_answers=True)
+            if not test:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Practice set not found")
+            score, result = repository.score_writing_test(test, payload.essayText)
+            result["sessionId"] = session_id
+            result["durationSeconds"] = payload.durationSeconds
+            session = repository.submit_writing_attempt(
+                user["id"],
+                session_id,
+                payload.answers,
+                payload.essayText,
+                payload.durationSeconds,
+                score,
+                result,
+            )
+            return {"session": session, "result": result}
+
+        if repository.writing_test_key(session_id) is not None:
+            test = repository.get_writing_test(session_id, include_answers=True)
+            if not test:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Practice set not found")
+            score, result = repository.score_writing_test(test, payload.essayText)
+            attempt_session = repository.create_writing_attempt(user["id"], session_id)
+            result["sessionId"] = attempt_session["id"]
+            result["durationSeconds"] = payload.durationSeconds
+            session = repository.submit_writing_attempt(
+                user["id"],
+                attempt_session["id"],
+                payload.answers,
+                payload.essayText,
+                payload.durationSeconds,
+                score,
+                result,
+            )
+            return {"session": session, "result": result}
+
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
     test = repository.get_test(attempt["test_id"], include_answers=True)
     if not test:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Practice set not found")
@@ -867,6 +1048,15 @@ def get_practice_result(
     practice_id: str,
     user: dict[str, Any] = Depends(require_supabase_user),
 ) -> dict[str, Any]:
+    listening_result = repository.latest_listening_result(user["id"], practice_id)
+    if listening_result:
+        return listening_result
+    reading_result = repository.latest_reading_result(user["id"], practice_id)
+    if reading_result:
+        return reading_result
+    writing_result = repository.latest_writing_result(user["id"], practice_id)
+    if writing_result:
+        return writing_result
     result = repository.latest_result(user["id"], practice_id)
     if not result:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Result not found")
@@ -959,16 +1149,24 @@ def mock_result(
 @router.get("/vocabulary")
 def vocabulary(
     category: str | None = Query(default=None),
+    group: str | None = Query(default=None),
     user: dict[str, Any] = Depends(require_supabase_user),
 ) -> list[dict[str, Any]]:
-    return repository.list_vocabulary(user["id"], category)
+    return repository.list_vocabulary(user["id"], group or category)
+
+
+@router.get("/vocabulary/groups")
+def vocabulary_groups(
+    user: dict[str, Any] = Depends(require_supabase_user),
+) -> list[dict[str, Any]]:
+    return repository.vocabulary_groups(user["id"])
 
 
 @router.get("/vocabulary/categories")
 def vocabulary_categories(
     user: dict[str, Any] = Depends(require_supabase_user),
 ) -> list[dict[str, Any]]:
-    return repository.vocabulary_categories(user["id"])
+    return repository.vocabulary_groups(user["id"])
 
 
 @router.get("/vocabulary/{word_id}")
@@ -993,6 +1191,45 @@ def review_vocabulary(
     return repository.save_vocabulary_review(
         user["id"], payload.wordId, payload.result
     )
+
+
+@router.get("/plans")
+def plans(user: dict[str, Any] = Depends(require_supabase_user)) -> list[dict[str, Any]]:
+    return repository.list_plans()
+
+
+@router.get("/plans/progress")
+def plan_progress(user: dict[str, Any] = Depends(require_supabase_user)) -> dict[str, Any]:
+    return repository.get_user_plan_progress(user["id"])
+
+
+@router.get("/plans/{plan_slug}")
+def plan_detail(
+    plan_slug: str,
+    user: dict[str, Any] = Depends(require_supabase_user),
+) -> dict[str, Any]:
+    plan = repository.get_plan(plan_slug)
+    if not plan:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found")
+    return plan
+
+
+@router.patch("/plans/{plan_slug}/parts/{part_key}")
+def update_plan_part(
+    plan_slug: str,
+    part_key: str,
+    payload: PlanPartCompletionRequest,
+    user: dict[str, Any] = Depends(require_supabase_user),
+) -> dict[str, Any]:
+    try:
+        progress = repository.set_user_plan_part(
+            user["id"], plan_slug, part_key, payload.completed
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    if not progress:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found")
+    return progress
 
 
 @router.get("/study-plan")

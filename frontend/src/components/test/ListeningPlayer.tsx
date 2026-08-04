@@ -22,6 +22,7 @@ export function ListeningPlayer({ audioUrl, segments, questions }: ListeningPlay
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
+  const [audioError, setAudioError] = useState("");
   const audioRef = useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
@@ -29,41 +30,74 @@ export function ListeningPlayer({ audioUrl, segments, questions }: ListeningPlay
     if (!audio) return;
 
     const updateProgress = () => {
-      setProgress((audio.currentTime / audio.duration) * 100);
+      setProgress(audio.duration ? (audio.currentTime / audio.duration) * 100 : 0);
       setCurrentTime(audio.currentTime);
     };
 
     const onLoadedMetadata = () => {
       setDuration(audio.duration);
+      setAudioError("");
     };
+
+    const onError = () => {
+      setIsPlaying(false);
+      setAudioError("Audio is unavailable. Check the Supabase Storage bucket, file path, and signed URL access.");
+    };
+
+    const onEnded = () => setIsPlaying(false);
 
     audio.addEventListener("timeupdate", updateProgress);
     audio.addEventListener("loadedmetadata", onLoadedMetadata);
-    audio.addEventListener("ended", () => setIsPlaying(false));
+    audio.addEventListener("error", onError);
+    audio.addEventListener("ended", onEnded);
 
     return () => {
       audio.removeEventListener("timeupdate", updateProgress);
       audio.removeEventListener("loadedmetadata", onLoadedMetadata);
+      audio.removeEventListener("error", onError);
+      audio.removeEventListener("ended", onEnded);
     };
   }, []);
 
-  const togglePlay = () => {
+  useEffect(() => {
     if (audioRef.current) {
-      if (isPlaying) {
-        audioRef.current.pause();
-      } else {
-        audioRef.current.play();
-      }
-      setIsPlaying(!isPlaying);
+      audioRef.current.muted = isMuted;
     }
+  }, [isMuted]);
+
+  const playAudio = async () => {
+    const audio = audioRef.current;
+    if (!audio || !audioUrl) {
+      setAudioError("Audio is unavailable. Check the Supabase Storage bucket, file path, and signed URL access.");
+      return;
+    }
+
+    try {
+      await audio.play();
+      setAudioError("");
+      setIsPlaying(true);
+    } catch {
+      setIsPlaying(false);
+      setAudioError("Audio is unavailable. Check the Supabase Storage bucket, file path, and signed URL access.");
+    }
+  };
+
+  const togglePlay = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (isPlaying) {
+      audio.pause();
+      setIsPlaying(false);
+      return;
+    }
+    void playAudio();
   };
 
   const jumpTo = (time: number) => {
     if (audioRef.current) {
       audioRef.current.currentTime = time;
       if (!isPlaying) {
-        audioRef.current.play();
-        setIsPlaying(true);
+        void playAudio();
       }
     }
   };
@@ -76,7 +110,7 @@ export function ListeningPlayer({ audioUrl, segments, questions }: ListeningPlay
 
   return (
     <div className="w-full h-full flex flex-col bg-[#F8FAFC]">
-      <audio ref={audioRef} src={audioUrl} />
+      <audio ref={audioRef} src={audioUrl || undefined} preload="metadata" />
       
       {/* Premium Floating Audio Bar */}
       <div className="mx-auto w-full max-w-2xl mt-8 px-6">
@@ -112,12 +146,18 @@ export function ListeningPlayer({ audioUrl, segments, questions }: ListeningPlay
                  <div 
                    key={s.id}
                    className="absolute h-full w-0.5 bg-white/30"
-                   style={{ left: `${(s.timestamp / duration) * 100}%` }}
+                   style={{ left: `${duration ? (s.timestamp / duration) * 100 : 0}%` }}
                    title={s.label}
                  />
                ))}
             </div>
           </div>
+
+          {audioError && (
+            <p className="text-[11px] font-semibold text-red-200 bg-red-500/15 border border-red-300/20 px-3 py-2 rounded-lg">
+              {audioError}
+            </p>
+          )}
 
           <div className="flex items-center justify-between mt-2">
             <div className="flex items-center gap-4">

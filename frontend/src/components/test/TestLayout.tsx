@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { Clock, ChevronLeft, ChevronRight, Maximize2, Minimize2, LogOut } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import { Clock, ChevronLeft, ChevronRight, Maximize2, Minimize2, LogOut, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface TestLayoutProps {
@@ -13,6 +13,8 @@ interface TestLayoutProps {
   onExit: () => void;
   onNext: () => void;
   onPrev: () => void;
+  nextLabel?: string;
+  isLastQuestion?: boolean;
   totalQuestions: number;
   currentQuestion?: number;
   onQuestionSelect?: (index: number) => void;
@@ -27,26 +29,28 @@ export function TestLayout({
   onExit,
   onNext,
   onPrev,
+  nextLabel = "Next",
+  isLastQuestion = false,
   totalQuestions,
   currentQuestion = 1,
   onQuestionSelect
 }: TestLayoutProps) {
   const [timeLeft, setTimeLeft] = useState(initialTime);
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const timeUpHandledRef = useRef(false);
 
   useEffect(() => {
     const timer = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 0) {
-          clearInterval(timer);
-          onTimeUp?.();
-          return 0;
-        }
-        return prev - 1;
-      });
+      setTimeLeft((prev) => Math.max(0, prev - 1));
     }, 1000);
     return () => clearInterval(timer);
-  }, [onTimeUp]);
+  }, []);
+
+  useEffect(() => {
+    if (timeLeft > 0 || timeUpHandledRef.current) return;
+    timeUpHandledRef.current = true;
+    onTimeUp?.();
+  }, [onTimeUp, timeLeft]);
 
   const formatTime = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
@@ -168,8 +172,8 @@ export function TestLayout({
             onClick={onNext}
             className="h-9 px-8 rounded-none bg-black hover:bg-slate-800 text-white text-xs font-bold uppercase tracking-widest shadow-lg active:scale-95 transition-transform"
           >
-            Next
-            <ChevronRight size={16} className="ml-2" />
+            {nextLabel}
+            {isLastQuestion ? <Send size={16} className="ml-2" /> : <ChevronRight size={16} className="ml-2" />}
           </Button>
         </div>
       </footer>

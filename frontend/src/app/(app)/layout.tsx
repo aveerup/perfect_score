@@ -8,7 +8,7 @@ import { type AuthUser } from "@/lib/auth";
 import { SearchOverlay } from "@/components/layout/SearchOverlay";
 import { 
   Home, Video, PenTool, BookOpen, ClipboardCheck, Calendar,
-  Search, User, Keyboard, LogOut, Settings, Trophy, CheckCircle2
+  Search, User, Keyboard, LogOut, Settings, Trophy, CheckCircle2, ChevronDown
 } from "lucide-react";
 
 const navItems = [
@@ -22,45 +22,75 @@ const navItems = [
   { name: "Profile", href: "/profile", icon: User },
 ];
 
+const planLinks = [
+  { name: "1 Week", href: "/plan/1-week-crash-plan" },
+  { name: "2 Weeks", href: "/plan/2-week-ielts-study-plan" },
+  { name: "1 Month", href: "/plan/1-month-ielts-study-plan" },
+  { name: "2 Months", href: "/plan/2-month-ielts-study-plan" },
+  { name: "6 Months", href: "/plan/6-month-ielts-study-plan" },
+];
+
+async function getAuthenticatedUser() {
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
+
+  let response = await fetch(`${apiUrl}/me`, {
+    credentials: "include",
+  });
+
+  if (response.status === 401) {
+    const refreshResponse = await fetch(`${apiUrl}/auth/refresh`, {
+      method: "POST",
+      credentials: "include",
+    });
+
+    if (refreshResponse.ok) {
+      response = await fetch(`${apiUrl}/me`, {
+        credentials: "include",
+      });
+    }
+  }
+
+  if (!response.ok) {
+    throw new Error("Session expired");
+  }
+
+  return response.json() as Promise<AuthUser>;
+}
+
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [planMenuOpen, setPlanMenuOpen] = useState(false);
 
   useEffect(() => {
+    let isMounted = true;
+
     const validateSession = async () => {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
-
       try {
-        let response = await fetch(`${apiUrl}/me`, {
-          credentials: "include",
-        });
-
-        if (response.status === 401) {
-          const refreshResponse = await fetch(`${apiUrl}/auth/refresh`, {
-            method: "POST",
-            credentials: "include",
-          });
-
-          if (refreshResponse.ok) {
-            response = await fetch(`${apiUrl}/me`, {
-              credentials: "include",
-            });
-          }
+        const authenticatedUser = await getAuthenticatedUser();
+        if (isMounted) {
+          setUser(authenticatedUser);
         }
-
-        if (!response.ok) {
-          throw new Error("Session expired");
-        }
-
-        const authenticatedUser = await response.json() as AuthUser;
-        setUser(authenticatedUser);
       } catch {
         window.location.replace("/login");
       }
     };
 
     void validateSession();
+
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        void validateSession();
+      }
+    };
+
+    window.addEventListener("pageshow", handlePageShow);
+
+    return () => {
+      isMounted = false;
+      window.removeEventListener("pageshow", handlePageShow);
+    };
   }, []);
 
   const handleLogout = async () => {
@@ -113,11 +143,73 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
 
         {/* Nav Items */}
-        <nav className="flex-1 py-10 px-4 overflow-hidden">
+        <nav className="flex-1 py-10 px-4 overflow-visible">
           <div className="space-y-2">
             {navItems.map((item, i) => {
               const isActive = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href));
               const Icon = item.icon;
+              if (item.name === "Plan") {
+                return (
+                  <motion.div
+                    key={item.name}
+                    className="relative"
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: i * 0.05 }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setPlanMenuOpen((value) => !value)}
+                      className={`flex w-full items-center gap-4 px-4 py-3.5 transition-all duration-200 rounded-2xl group relative overflow-hidden ${
+                        isActive
+                          ? "bg-primary/5 text-primary"
+                          : "text-slate-500 hover:text-slate-900 hover:bg-slate-300"
+                      }`}
+                    >
+                      <Icon className={`w-5 h-5 shrink-0 ${isActive ? "stroke-[2.5px]" : "stroke-[1.8px]"}`} />
+                      <span className="text-sm font-bold whitespace-nowrap transition-all lg:opacity-100 opacity-0 lg:w-auto w-0 overflow-hidden tracking-tight">
+                        {item.name}
+                      </span>
+                      <ChevronDown className={`ml-auto hidden h-4 w-4 transition-transform lg:block ${planMenuOpen ? "rotate-180" : ""}`} />
+                      {isActive && (
+                        <motion.div
+                          layoutId="active-indicator"
+                          className="absolute left-0 top-1/4 bottom-1/4 w-1 bg-primary rounded-full"
+                        />
+                      )}
+                    </button>
+                    {planMenuOpen && (
+                      <div className="absolute left-full top-0 z-50 ml-3 w-60 border border-slate-200 bg-white p-2 shadow-2xl">
+                        <Link
+                          href="/plan"
+                          onClick={() => setPlanMenuOpen(false)}
+                          className={`mb-1 block px-3 py-2 text-xs font-black uppercase tracking-[0.16em] transition-colors ${
+                            pathname === "/plan"
+                              ? "bg-primary text-white"
+                              : "text-slate-400 hover:bg-slate-50 hover:text-slate-950"
+                          }`}
+                        >
+                          All Plans
+                        </Link>
+                        {planLinks.map((plan) => (
+                          <Link
+                            key={plan.href}
+                            href={plan.href}
+                            onClick={() => setPlanMenuOpen(false)}
+                            className={`block px-3 py-2.5 text-sm font-black transition-colors ${
+                              pathname === plan.href
+                                ? "bg-primary text-white"
+                                : "text-slate-500 hover:bg-slate-100 hover:text-slate-950"
+                            }`}
+                          >
+                            {plan.name}
+                          </Link>
+                        ))}
+                      </div>
+                    )}
+                  </motion.div>
+                );
+              }
               return (
                 <motion.div
                   key={item.name}

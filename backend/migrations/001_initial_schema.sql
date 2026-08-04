@@ -77,6 +77,103 @@ create table if not exists public.questions (
   unique (section_id, number)
 );
 
+create table if not exists public.listening_tests (
+  test_no integer primary key,
+  question jsonb not null default '[]'::jsonb,
+  category text not null default 'Medium' check (category in ('Easy', 'Medium', 'Hard')),
+  answer jsonb not null default '{}'::jsonb,
+  audio_path text,
+  title text,
+  subtype text,
+  band_range text,
+  time_limit_seconds integer not null default 1800,
+  is_published boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.reading_tests (
+  test_no integer primary key,
+  category text not null default 'Medium' check (category in ('Easy', 'Medium', 'Hard')),
+  questions jsonb not null default '{}'::jsonb,
+  answers jsonb not null default '{}'::jsonb
+);
+
+create table if not exists public.writing_tests (
+  set_no integer not null,
+  task_type text not null check (task_type in ('task1', 'task2')),
+  questions jsonb not null default '{}'::jsonb,
+  answers jsonb not null default '{}'::jsonb,
+  category text not null default 'Medium' check (category in ('Easy', 'Medium', 'Hard')),
+  created_at timestamptz not null default now(),
+  primary key (set_no, task_type)
+);
+
+alter table public.reading_tests
+add column if not exists category text not null default 'Medium';
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'reading_tests_category_check'
+      and conrelid = 'public.reading_tests'::regclass
+  ) then
+    alter table public.reading_tests
+    add constraint reading_tests_category_check
+    check (category in ('Easy', 'Medium', 'Hard'));
+  end if;
+end
+$$;
+
+create table if not exists public.listening_test_attempts (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  test_no integer not null references public.listening_tests(test_no),
+  status text not null default 'active' check (status in ('active', 'submitted')),
+  current_question integer not null default 1,
+  time_left integer,
+  answers jsonb not null default '{}'::jsonb,
+  duration_seconds integer,
+  overall_score numeric(3,1),
+  result jsonb,
+  started_at timestamptz not null default now(),
+  submitted_at timestamptz
+);
+
+create table if not exists public.reading_test_attempts (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  test_no integer not null references public.reading_tests(test_no),
+  status text not null default 'active' check (status in ('active', 'submitted')),
+  current_question integer not null default 1,
+  time_left integer,
+  answers jsonb not null default '{}'::jsonb,
+  duration_seconds integer,
+  overall_score numeric(3,1),
+  result jsonb,
+  started_at timestamptz not null default now(),
+  submitted_at timestamptz
+);
+
+create table if not exists public.writing_test_attempts (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  set_no integer not null,
+  task_type text not null,
+  status text not null default 'active' check (status in ('active', 'submitted')),
+  current_question integer not null default 1,
+  time_left integer,
+  answers jsonb not null default '{}'::jsonb,
+  essay_text text,
+  duration_seconds integer,
+  overall_score numeric(3,1),
+  result jsonb,
+  started_at timestamptz not null default now(),
+  submitted_at timestamptz,
+  foreign key (set_no, task_type) references public.writing_tests(set_no, task_type)
+);
+
 create table if not exists public.test_attempts (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -128,10 +225,12 @@ create table if not exists public.typing_attempts (
 create table if not exists public.vocabulary_words (
   id text primary key,
   word text not null,
-  category text not null,
-  definition text not null,
-  collocations jsonb not null default '[]'::jsonb,
-  example text,
+  group_name text not null,
+  word_type text not null,
+  english_meaning text not null,
+  bangla_meaning text not null,
+  sentence text not null,
+  sentence_bangla_meaning text not null,
   created_at timestamptz not null default now()
 );
 
@@ -166,7 +265,19 @@ create table if not exists public.study_tasks (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.plans (
+  title text primary key,
+  details jsonb not null default '{}'::jsonb
+);
+
+create table if not exists public.user_plans (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  following_plans jsonb not null default '[]'::jsonb,
+  completed jsonb not null default '{}'::jsonb
+);
+
 create index if not exists lectures_published_at_idx on public.lectures (published_at desc);
+create index if not exists listening_test_attempts_user_idx on public.listening_test_attempts (user_id, started_at desc);
 create index if not exists test_attempts_user_idx on public.test_attempts (user_id, started_at desc);
 create index if not exists typing_attempts_user_idx on public.typing_attempts (user_id, created_at desc);
 create index if not exists study_tasks_plan_date_idx on public.study_tasks (plan_id, scheduled_date);
@@ -186,6 +297,10 @@ begin
   on conflict (id) do nothing;
 
   insert into public.study_plans (user_id)
+  values (new.id)
+  on conflict (user_id) do nothing;
+
+  insert into public.user_plans (user_id)
   values (new.id)
   on conflict (user_id) do nothing;
 
@@ -210,12 +325,22 @@ insert into public.study_plans (user_id)
 select id from auth.users
 on conflict (user_id) do nothing;
 
+insert into public.user_plans (user_id)
+select id from auth.users
+on conflict (user_id) do nothing;
+
 alter table public.profiles enable row level security;
 alter table public.lectures enable row level security;
 alter table public.lecture_progress enable row level security;
 alter table public.tests enable row level security;
 alter table public.test_sections enable row level security;
 alter table public.questions enable row level security;
+alter table public.listening_tests enable row level security;
+alter table public.listening_test_attempts enable row level security;
+alter table public.reading_tests enable row level security;
+alter table public.reading_test_attempts enable row level security;
+alter table public.writing_tests enable row level security;
+alter table public.writing_test_attempts enable row level security;
 alter table public.test_attempts enable row level security;
 alter table public.test_answers enable row level security;
 alter table public.typing_passages enable row level security;
@@ -224,6 +349,8 @@ alter table public.vocabulary_words enable row level security;
 alter table public.vocabulary_progress enable row level security;
 alter table public.study_plans enable row level security;
 alter table public.study_tasks enable row level security;
+alter table public.plans enable row level security;
+alter table public.user_plans enable row level security;
 
 drop policy if exists "profiles_select_own" on public.profiles;
 create policy "profiles_select_own" on public.profiles
@@ -258,6 +385,27 @@ for select to authenticated using (
     where test_sections.id = questions.section_id and tests.is_published
   )
 );
+drop policy if exists "listening_tests_read_published" on public.listening_tests;
+create policy "listening_tests_read_published" on public.listening_tests
+for select to authenticated using (is_published);
+drop policy if exists "listening_test_attempts_own" on public.listening_test_attempts;
+create policy "listening_test_attempts_own" on public.listening_test_attempts
+for all to authenticated using ((select auth.uid()) = user_id)
+with check ((select auth.uid()) = user_id);
+drop policy if exists "reading_tests_read" on public.reading_tests;
+create policy "reading_tests_read" on public.reading_tests
+for select to authenticated using (true);
+drop policy if exists "reading_test_attempts_own" on public.reading_test_attempts;
+create policy "reading_test_attempts_own" on public.reading_test_attempts
+for all to authenticated using ((select auth.uid()) = user_id)
+with check ((select auth.uid()) = user_id);
+drop policy if exists "writing_tests_read" on public.writing_tests;
+create policy "writing_tests_read" on public.writing_tests
+for select to authenticated using (true);
+drop policy if exists "writing_test_attempts_own" on public.writing_test_attempts;
+create policy "writing_test_attempts_own" on public.writing_test_attempts
+for all to authenticated using ((select auth.uid()) = user_id)
+with check ((select auth.uid()) = user_id);
 drop policy if exists "test_attempts_own" on public.test_attempts;
 create policy "test_attempts_own" on public.test_attempts
 for all to authenticated using ((select auth.uid()) = user_id)
@@ -314,17 +462,29 @@ for all to authenticated using (
   )
 );
 
+drop policy if exists "plans_read_authenticated" on public.plans;
+create policy "plans_read_authenticated" on public.plans
+for select to authenticated using (true);
+drop policy if exists "user_plans_own" on public.user_plans;
+create policy "user_plans_own" on public.user_plans
+for all to authenticated using ((select auth.uid()) = user_id)
+with check ((select auth.uid()) = user_id);
+
 -- The browser uses FastAPI for all mutations. Keep scores, roles, and progress
 -- backend-authoritative even if a user calls Supabase's table API directly.
 revoke insert, update, delete on table
   public.profiles,
   public.lecture_progress,
+  public.listening_test_attempts,
+  public.reading_test_attempts,
+  public.writing_test_attempts,
   public.test_attempts,
   public.test_answers,
   public.typing_attempts,
   public.vocabulary_progress,
   public.study_plans,
-  public.study_tasks
+  public.study_tasks,
+  public.user_plans
 from authenticated, anon;
 
 -- Published questions are readable, but answer keys are only used by FastAPI.
@@ -338,3 +498,38 @@ grant select (
   options,
   metadata
 ) on public.questions to authenticated;
+
+-- Listening answers are stored beside question JSON, so expose only non-answer
+-- columns to browsers. FastAPI reads the answer key from the backend connection.
+revoke select on public.listening_tests from authenticated, anon;
+grant select (
+  test_no,
+  question,
+  category,
+  audio_path,
+  title,
+  subtype,
+  band_range,
+  time_limit_seconds,
+  is_published,
+  created_at
+) on public.listening_tests to authenticated;
+
+-- Reading answers are stored beside question JSON, so expose only the prompt
+-- payload to browsers. FastAPI reads the answer key from the backend connection.
+revoke select on public.reading_tests from authenticated, anon;
+grant select (
+  test_no,
+  category,
+  questions
+) on public.reading_tests to authenticated;
+
+-- Writing model answers and scoring guidance stay backend-authoritative.
+revoke select on public.writing_tests from authenticated, anon;
+grant select (
+  set_no,
+  task_type,
+  questions,
+  category,
+  created_at
+) on public.writing_tests to authenticated;

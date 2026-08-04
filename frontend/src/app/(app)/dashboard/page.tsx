@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Clock, Flame, Target, TrendingUp } from "lucide-react";
 import { useApiData } from "@/lib/api";
-import { AuthProfile, SessionEntry, VocabularyCategorySummary } from "@/lib/types";
+import { AuthProfile, SessionEntry, VocabularyGroupSummary } from "@/lib/types";
 
 interface DashboardResponse {
   user: AuthProfile;
@@ -13,7 +13,7 @@ interface DashboardResponse {
   practiceTimeHours: number;
   skillProficiency: { skill: string; current: number; sub: string }[];
   recentSessions: SessionEntry[];
-  vocabularyMastery: VocabularyCategorySummary[];
+  vocabularyMastery: VocabularyGroupSummary[];
 }
 
 export default function DashboardPage() {
@@ -84,8 +84,8 @@ export default function DashboardPage() {
         </div>
         <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-4 mt-6">
           {data.vocabularyMastery.slice(0, 5).map((item) => (
-            <div key={item.category} className="bg-slate-50 rounded-xl p-4">
-              <p className="font-bold text-sm">{item.category}</p>
+            <div key={item.group} className="bg-slate-50 rounded-xl p-4">
+              <p className="font-bold text-sm">{item.group}</p>
               <p className="text-2xl font-black text-primary mt-2">{item.mastery}%</p>
             </div>
           ))}

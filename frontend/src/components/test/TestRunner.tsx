@@ -32,6 +32,7 @@ export function TestRunner({ kind, testId }: TestRunnerProps) {
   const [questionIndex, setQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [essayText, setEssayText] = useState("");
+  const [isReadingPassageBlurred, setIsReadingPassageBlurred] = useState(true);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -63,9 +64,24 @@ export function TestRunner({ kind, testId }: TestRunnerProps) {
   const section = test?.sections[sectionIndex];
   const question = section?.questions[questionIndex];
   const sectionNames = useMemo(() => test?.sections.map((item) => item.name) ?? [], [test]);
+  const isLastQuestion = Boolean(
+    test &&
+      section &&
+      sectionIndex === test.sections.length - 1 &&
+      questionIndex === section.questions.length - 1,
+  );
 
   const saveAnswer = (questionId: string, value: string) => {
+    if (section?.skill === "R") {
+      setIsReadingPassageBlurred(true);
+    }
     setAnswers((current) => ({ ...current, [questionId]: value }));
+  };
+
+  const handleQuestionInteract = () => {
+    if (section?.skill === "R") {
+      setIsReadingPassageBlurred(true);
+    }
   };
 
   const submit = async () => {
@@ -92,6 +108,10 @@ export function TestRunner({ kind, testId }: TestRunnerProps) {
       return;
     }
     if (sectionIndex < test.sections.length - 1) {
+      const nextSection = test.sections[sectionIndex + 1];
+      if (nextSection?.skill === "R") {
+        setIsReadingPassageBlurred(true);
+      }
       setSectionIndex((current) => current + 1);
       setQuestionIndex(0);
       return;
@@ -107,6 +127,9 @@ export function TestRunner({ kind, testId }: TestRunnerProps) {
     }
     if (sectionIndex > 0) {
       const previousSection = test.sections[sectionIndex - 1];
+      if (previousSection.skill === "R") {
+        setIsReadingPassageBlurred(true);
+      }
       setSectionIndex((current) => current - 1);
       setQuestionIndex(Math.max(0, previousSection.questions.length - 1));
     }
@@ -116,7 +139,14 @@ export function TestRunner({ kind, testId }: TestRunnerProps) {
   if (error && !test) return <div className="py-20 text-center text-red-500">{error}</div>;
   if (!test || !section || !question) return <div className="py-20 text-center">Test content is unavailable.</div>;
 
-  const questionControl = <QuestionControl question={question} value={answers[question.id] ?? ""} onChange={saveAnswer} />;
+  const questionControl = (
+    <QuestionControl
+      question={question}
+      value={answers[question.id] ?? ""}
+      onChange={saveAnswer}
+      onInteract={handleQuestionInteract}
+    />
+  );
 
   let content: React.ReactNode = questionControl;
   if (section.skill === "L") {
@@ -128,13 +158,25 @@ export function TestRunner({ kind, testId }: TestRunnerProps) {
       />
     );
   } else if (section.skill === "R") {
-    content = <ReadingPlayer passage={section.passage ?? ""} questions={questionControl} />;
+    content = (
+      <ReadingPlayer
+        passage={section.passage ?? ""}
+        questions={questionControl}
+        isPassageBlurred={isReadingPassageBlurred}
+        onRevealPassage={() => setIsReadingPassageBlurred(false)}
+      />
+    );
   } else if (section.skill === "W") {
     content = (
       <WritingPlayer
         prompt={question.prompt}
         targetWords={question.targetWords ?? 250}
+        taskType={question.taskType ?? section.taskType}
+        visualType={question.visualType}
+        data={question.data}
+        essayType={question.essayType}
         onChange={setEssayText}
+        onSubmit={() => void submit()}
       />
     );
   } else if (section.skill === "S") {
@@ -153,6 +195,8 @@ export function TestRunner({ kind, testId }: TestRunnerProps) {
         onExit={() => router.push(`/${kind}`)}
         onNext={next}
         onPrev={previous}
+        nextLabel={isLastQuestion ? "Submit" : "Next"}
+        isLastQuestion={isLastQuestion}
         totalQuestions={section.questions.length}
         currentQuestion={questionIndex + 1}
         onQuestionSelect={(number) => setQuestionIndex(number - 1)}
@@ -167,10 +211,12 @@ function QuestionControl({
   question,
   value,
   onChange,
+  onInteract,
 }: {
   question: TestQuestion;
   value: string;
   onChange: (questionId: string, value: string) => void;
+  onInteract?: () => void;
 }) {
   return (
     <div className="space-y-6 max-w-xl mx-auto">
@@ -183,7 +229,10 @@ function QuestionControl({
           {question.options.map((option) => (
             <button
               key={option}
-              onClick={() => onChange(question.id, option)}
+              onClick={() => {
+                onInteract?.();
+                onChange(question.id, option);
+              }}
               className={`p-4 border-2 rounded-xl text-left font-bold ${
                 value === option ? "border-primary bg-primary/5 text-primary" : "border-slate-200"
               }`}
@@ -195,7 +244,11 @@ function QuestionControl({
       ) : (
         <input
           value={value}
-          onChange={(event) => onChange(question.id, event.target.value)}
+          onFocus={onInteract}
+          onChange={(event) => {
+            onInteract?.();
+            onChange(question.id, event.target.value);
+          }}
           className="w-full border-b-2 border-slate-300 bg-transparent py-3 outline-none focus:border-primary"
           placeholder="Type your answer"
         />

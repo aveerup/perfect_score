@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { 
   Panel, 
   Group, 
@@ -18,9 +18,16 @@ import { Button } from "@/components/ui/button";
 interface ReadingPlayerProps {
   passage: string;
   questions: React.ReactNode;
+  isPassageBlurred?: boolean;
+  onRevealPassage?: () => void;
 }
 
-export function ReadingPlayer({ passage, questions }: ReadingPlayerProps) {
+export function ReadingPlayer({
+  passage,
+  questions,
+  isPassageBlurred = false,
+  onRevealPassage,
+}: ReadingPlayerProps) {
   const [fontSize, setFontSize] = useState(16);
   const [isSkimming, setIsSkimming] = useState(false);
   const [skimmingSpeed, setSkimmingSpeed] = useState(250); // WPM
@@ -28,7 +35,10 @@ export function ReadingPlayer({ passage, questions }: ReadingPlayerProps) {
   const passageRef = useRef<HTMLDivElement>(null);
   
   // Split passage into paragraphs for skimming
-  const paragraphs = passage.split('\n').filter(p => p.trim() !== '');
+  const paragraphs = useMemo(
+    () => passage.split('\n').filter(p => p.trim() !== ''),
+    [passage],
+  );
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -118,10 +128,27 @@ export function ReadingPlayer({ passage, questions }: ReadingPlayerProps) {
         <Panel defaultSize={50} minSize={30} className="bg-white">
           <div 
             ref={passageRef}
-            className="h-full overflow-y-auto p-12 leading-relaxed text-slate-800 transition-all selection:bg-yellow-200"
+            className={`relative h-full overflow-y-auto p-12 leading-relaxed text-slate-800 transition-all selection:bg-yellow-200 ${
+              isPassageBlurred ? "cursor-pointer" : ""
+            }`}
             style={{ fontSize: `${fontSize}px` }}
+            onClick={() => {
+              if (isPassageBlurred) onRevealPassage?.();
+            }}
+            onKeyDown={(event) => {
+              if (!isPassageBlurred || (event.key !== "Enter" && event.key !== " ")) return;
+              event.preventDefault();
+              onRevealPassage?.();
+            }}
+            role={isPassageBlurred ? "button" : undefined}
+            tabIndex={isPassageBlurred ? 0 : undefined}
+            aria-label={isPassageBlurred ? "Reveal reading passage" : undefined}
           >
-            <div className="max-w-2xl mx-auto space-y-6">
+            <div
+              className={`max-w-2xl mx-auto space-y-6 transition-all duration-300 ${
+                isPassageBlurred ? "blur-sm opacity-40 select-none" : ""
+              }`}
+            >
               {paragraphs.map((p, i) => (
                 <p 
                   key={i} 
@@ -135,6 +162,13 @@ export function ReadingPlayer({ passage, questions }: ReadingPlayerProps) {
                 </p>
               ))}
             </div>
+            {isPassageBlurred && (
+              <div className="absolute inset-0 flex items-center justify-center bg-white/20">
+                <div className="h-16 w-16 rounded-full bg-white/90 border border-slate-200 shadow-xl flex items-center justify-center text-slate-700">
+                  <Eye size={24} />
+                </div>
+              </div>
+            )}
           </div>
         </Panel>
 

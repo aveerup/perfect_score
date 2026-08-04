@@ -73,6 +73,10 @@ class VocabularyReviewRequest(BaseModel):
     result: Literal["again", "hard", "good", "easy", "known"]
 
 
+class PlanPartCompletionRequest(BaseModel):
+    completed: bool
+
+
 class TypingAttemptRequest(BaseModel):
     essayId: str
     wpm: float = Field(ge=0)

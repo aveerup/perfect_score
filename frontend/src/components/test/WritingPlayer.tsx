@@ -1,161 +1,206 @@
 "use client";
 
-import React, { useState, useRef } from "react";
-import { 
-  Trash2, 
-  Maximize2, 
-  Scan,
-  Loader2,
-  Copy
+import React, { useRef, useState } from "react";
+import {
+  Clipboard,
+  ClipboardPaste,
+  EyeOff,
+  MoreHorizontal,
+  Plus,
+  RotateCcw,
+  Send,
+  Shuffle,
+  Undo2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { createWorker } from "tesseract.js";
-import { Panel, Group, Separator } from "react-resizable-panels";
 
 interface WritingPlayerProps {
   prompt: string;
   targetWords: number;
-  diagramUrl?: string;
+  taskType?: "task1" | "task2";
+  visualType?: string;
+  data?: {
+    columns?: string[];
+    rows?: string[][];
+  };
+  essayType?: string;
   onChange?: (text: string) => void;
+  onSubmit?: () => void;
 }
 
-export function WritingPlayer({ prompt, targetWords, diagramUrl, onChange }: WritingPlayerProps) {
+export function WritingPlayer({
+  prompt,
+  targetWords,
+  taskType,
+  visualType,
+  data,
+  essayType,
+  onChange,
+  onSubmit,
+}: WritingPlayerProps) {
   const [text, setText] = useState("");
-  const [isProcessing, setIsProcessing] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showCounter, setShowCounter] = useState(true);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const wordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
 
-  const handleOCR = async (file: File) => {
-    setIsProcessing(true);
-    try {
-      const worker = await createWorker('eng');
-      const { data: { text: recognizedText } } = await worker.recognize(file);
-      setText(prev => {
-        const next = prev + (prev ? "\n\n" : "") + recognizedText;
-        onChange?.(next);
-        return next;
-      });
-      await worker.terminate();
-    } catch (err) {
-      console.error("OCR Error:", err);
-      alert("Error processing image. Please try again.");
-    } finally {
-      setIsProcessing(false);
-    }
+  const updateText = (next: string) => {
+    setText(next);
+    onChange?.(next);
   };
 
-  const progressPercentage = Math.min(100, (wordCount / targetWords) * 100);
+  const cutSelection = async () => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    const selected = text.slice(textarea.selectionStart, textarea.selectionEnd);
+    if (!selected) return;
+    await navigator.clipboard.writeText(selected).catch(() => undefined);
+    updateText(text.slice(0, textarea.selectionStart) + text.slice(textarea.selectionEnd));
+  };
+
+  const pasteClipboard = async () => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    const clipboardText = await navigator.clipboard.readText().catch(() => "");
+    if (!clipboardText) return;
+    const next = text.slice(0, textarea.selectionStart) + clipboardText + text.slice(textarea.selectionEnd);
+    updateText(next);
+  };
 
   return (
-    <div className="w-full h-full bg-white flex flex-col">
-      <input 
-        type="file" 
-        ref={fileInputRef} 
-        className="hidden" 
-        accept="image/*" 
-        onChange={(e) => e.target.files?.[0] && handleOCR(e.target.files[0])}
-      />
-      
-      <Group orientation="horizontal" className="flex-grow">
-        {/* Left: Prompt */}
-        <Panel defaultSize={40} minSize={30} className="bg-slate-50 border-r border-slate-200">
-          <div className="h-full overflow-y-auto p-12 space-y-8">
-            <div className="space-y-4">
-               <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">The Context</span>
-               <h3 className="text-xl font-bold tracking-tight text-slate-800 leading-snug">
-                 {prompt}
-               </h3>
+    <div className="h-full bg-white flex flex-col text-slate-950">
+      <div className="h-14 shrink-0 flex items-center justify-between px-6 border-b border-slate-200">
+        <div className="flex items-baseline gap-3">
+          <h1 className="text-2xl font-black tracking-tight">Write Essay</h1>
+          <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+            {taskType === "task1" ? "Task 1" : "Task 2"}
+          </span>
+        </div>
+        <div className="flex items-center gap-3">
+          <button className="text-xs font-bold text-primary hover:text-primary/80">
+            My Saved Essays
+          </button>
+          <Button
+            onClick={onSubmit}
+            className="h-9 rounded-md bg-primary px-4 text-xs font-bold text-white gap-2"
+          >
+            <Send size={15} fill="currentColor" />
+            Submit
+          </Button>
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-grow p-5">
+        <div className="h-full border-2 border-slate-200 rounded-md overflow-hidden grid grid-cols-[315px_minmax(0,1fr)] bg-white">
+          <aside className="min-h-0 border-r border-slate-200 flex flex-col">
+            <div className="h-14 shrink-0 px-3 flex items-center gap-2 border-b border-slate-200">
+              <Button className="h-8 rounded-md bg-primary text-white px-3 text-[11px] font-bold gap-2">
+                <Shuffle size={14} />
+                Random Prompt
+              </Button>
+              <Button className="h-8 rounded-md bg-primary text-white px-3 text-[11px] font-bold gap-2">
+                <Plus size={14} />
+                Custom Prompt
+              </Button>
             </div>
 
-            {diagramUrl && (
-              <div className="bg-white p-4 rounded-3xl shadow-xl border border-slate-200 group relative">
-                 {/* Diagram URLs may come from user-managed Supabase Storage buckets. */}
-                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                 <img src={diagramUrl} alt="Writing Task Diagram" className="w-full h-auto rounded-2xl" />
-                 <div className="absolute inset-0 bg-black/5 opacity-0 group-hover:opacity-100 transition-opacity rounded-2xl flex items-center justify-center">
-                    <Button variant="secondary" size="sm" className="rounded-full shadow-lg">
-                       <Maximize2 size={14} className="mr-2" />
-                       View Full Diagram
-                    </Button>
-                 </div>
-              </div>
-            )}
-            
-            <div className="bg-slate-900 text-white p-6 rounded-3xl space-y-3 shadow-xl">
-               <p className="text-[10px] font-black uppercase tracking-widest text-white/40">Requirement</p>
-               <p className="text-sm font-medium leading-relaxed">
-                 You should write at least <span className="text-primary-foreground font-black underline decoration-primary decoration-4">{targetWords} words</span> for this task.
-               </p>
-            </div>
-          </div>
-        </Panel>
-
-        <Separator className="w-1 bg-slate-100 hover:bg-slate-300 transition-colors" />
-
-        {/* Right: Editor */}
-        <Panel defaultSize={60} minSize={40} className="bg-white">
-          <div className="h-full flex flex-col p-8">
-              <div className="mb-6 flex items-center justify-between">
-                 <div className="flex items-center gap-4">
-                    <div className="flex flex-col">
-                       <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Live Word Count</span>
-                       <div className="flex items-baseline gap-2">
-                          <span className={`text-2xl font-black tabular-nums transition-colors ${wordCount >= targetWords ? "text-green-600" : "text-black"}`}>
-                            {wordCount}
-                          </span>
-                          <span className="text-xs font-bold text-slate-400">/ {targetWords}</span>
-                       </div>
-                    </div>
-                    {/* Word Progress Bar */}
-                    <div className="w-32 h-1.5 bg-slate-100 rounded-full overflow-hidden mt-1">
-                       <div 
-                         className={`h-full transition-all duration-500 ${wordCount >= targetWords ? "bg-green-500" : "bg-black"}`}
-                         style={{ width: `${progressPercentage}%` }}
-                       />
-                    </div>
-                 </div>
-
-                 <div className="flex gap-2">
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className={`rounded-full h-9 px-4 text-[10px] uppercase font-bold border-slate-200 transition-all ${isProcessing ? "bg-black text-white" : ""}`}
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={isProcessing}
-                    >
-                      {isProcessing ? (
-                        <Loader2 size={14} className="mr-2 animate-spin" />
-                      ) : (
-                        <Scan size={14} className="mr-2" />
-                      )}
-                      {isProcessing ? "Processing Handwriting..." : "Scan Handwriting"}
-                    </Button>
-                    <Button variant="ghost" size="sm" className="h-9 w-9 p-0 rounded-full hover:bg-red-50 text-slate-400 hover:text-red-500" onClick={() => { setText(""); onChange?.(""); }}>
-                      <Trash2 size={16} />
-                    </Button>
-                 </div>
+            <div className="min-h-0 overflow-y-auto p-4 space-y-5">
+              <div className="space-y-2">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  {essayType || visualType || "Writing Prompt"}
+                </p>
+                <p className="text-[15px] leading-7 font-medium text-slate-900 whitespace-pre-line">
+                  {prompt}
+                </p>
               </div>
 
-              <div className="flex-grow relative group">
-                <textarea
-                  value={text}
-                  onChange={(e) => {
-                    setText(e.target.value);
-                    onChange?.(e.target.value);
-                  }}
-                  placeholder="Type your essay response here or use the handwriting scanner..."
-                  className="w-full h-full resize-none p-10 bg-slate-50/50 border-2 border-transparent focus:border-black rounded-[2.5rem] outline-none text-base leading-loose font-medium text-slate-700 transition-all placeholder:text-slate-300 placeholder:italic"
-                />
-                <div className="absolute right-6 bottom-6 opacity-0 group-hover:opacity-100 transition-opacity">
-                   <Button variant="secondary" size="sm" className="rounded-full shadow-md text-[10px] font-bold uppercase" onClick={() => navigator.clipboard.writeText(text)}>
-                      <Copy size={12} className="mr-2" />
-                      Copy Text
-                   </Button>
+              {data?.columns?.length && data.rows?.length ? (
+                <div className="overflow-hidden rounded-md border border-slate-200 bg-white">
+                  <table className="w-full text-left text-[11px]">
+                    <thead className="bg-slate-50 text-slate-500">
+                      <tr>
+                        {data.columns.map((column) => (
+                          <th key={column} className="px-2 py-2 font-black">
+                            {column}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.rows.map((row, rowIndex) => (
+                        <tr key={rowIndex} className="border-t border-slate-100">
+                          {row.map((cell, cellIndex) => (
+                            <td key={`${rowIndex}-${cellIndex}`} className="px-2 py-2 font-semibold text-slate-700">
+                              {cell}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
+              ) : null}
+
+              <div className="border-t border-slate-200 pt-4 text-xs leading-6 font-medium text-slate-500">
+                Write at least <span className="font-black text-slate-900">{targetWords} words</span>.
               </div>
-          </div>
-        </Panel>
-      </Group>
+            </div>
+          </aside>
+
+          <main className="min-h-0 flex flex-col bg-white">
+            <div className="h-12 shrink-0 px-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" className="h-7 px-3 text-xs" onClick={cutSelection}>
+                  <Clipboard size={13} className="mr-1" />
+                  Cut
+                </Button>
+                <Button variant="outline" size="sm" className="h-7 px-3 text-xs" onClick={pasteClipboard}>
+                  <ClipboardPaste size={13} className="mr-1" />
+                  Paste
+                </Button>
+                <Button variant="outline" size="sm" className="h-7 px-3 text-xs" onClick={() => document.execCommand("undo")}>
+                  <Undo2 size={13} className="mr-1" />
+                  Undo
+                </Button>
+                <Button variant="outline" size="sm" className="h-7 px-3 text-xs" onClick={() => document.execCommand("redo")}>
+                  <RotateCcw size={13} className="mr-1" />
+                  Redo
+                </Button>
+              </div>
+
+              <div className="flex items-center gap-4">
+                <Button variant="outline" size="sm" className="h-7 w-8 p-0">
+                  <RotateCcw size={15} />
+                </Button>
+                <Button variant="outline" size="sm" className="h-7 w-8 p-0">
+                  <MoreHorizontal size={15} />
+                </Button>
+                {showCounter && (
+                  <span className="text-sm font-medium tabular-nums">
+                    Word Count: {wordCount}
+                  </span>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 px-3 text-xs font-bold gap-2"
+                  onClick={() => setShowCounter((current) => !current)}
+                >
+                  <EyeOff size={14} />
+                  {showCounter ? "Hide Counter" : "Show Counter"}
+                </Button>
+              </div>
+            </div>
+
+            <textarea
+              ref={textareaRef}
+              value={text}
+              onChange={(event) => updateText(event.target.value)}
+              placeholder="Write your essay here..."
+              className="min-h-0 flex-grow w-full resize-none border-0 bg-white p-4 font-mono text-base leading-7 text-slate-800 outline-none placeholder:text-slate-400"
+            />
+          </main>
+        </div>
+      </div>
     </div>
   );
 }

@@ -2,27 +2,27 @@
 
 import React, { useRef } from "react";
 import Link from "next/link";
-import { motion, useScroll, useTransform } from "framer-motion";
+import { motion, useScroll, useTransform, type Variants } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import {
-  Video, PenTool, BookOpen, ClipboardCheck,
-  ArrowRight, CheckCircle2, Sparkles, Zap,
-  Target, TrendingUp, Trophy, Play, Star,
-  BookMarked, BrainCircuit, BarChart3, Users, Award
+  Video, PenTool, BookOpen,
+  ArrowRight, Sparkles, Zap,
+  TrendingUp, Trophy, Play, Star,
+  BrainCircuit, BarChart3, Users
 } from "lucide-react";
 
 /* ─── animation variants ─── */
-const fadeUp: any = {
+const fadeUp: Variants = {
   hidden: { opacity: 0, y: 24 },
   show: { opacity: 1, y: 0, transition: { duration: 0.55, ease: [0.22, 1, 0.36, 1] } },
 };
-const stagger: any = {
+const stagger: Variants = {
   hidden: {},
   show: { transition: { staggerChildren: 0.1, delayChildren: 0.05 } },
 };
-const scaleIn: any = {
+const scaleIn: Variants = {
   hidden: { opacity: 0, scale: 0.92 },
   show: { opacity: 1, scale: 1, transition: { duration: 0.6, ease: [0.22, 1, 0.36, 1] } },
 };
@@ -69,7 +69,7 @@ export default function Home() {
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-75" />
                   <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-accent" />
                 </span>
-                <span className="text-[12px] font-black uppercase tracking-[0.3em] text-white/80">Next-Gen IELTS Engine 2.0</span>
+                <span className="text-[12px] font-black uppercase tracking-[0.3em] text-white/80">নেক্সট-জেন IELTS ইঞ্জিন ২.০</span>
               </motion.div>
 
               {/* Futuristic Headline */}
@@ -77,20 +77,20 @@ export default function Home() {
                 variants={fadeUp} 
                 className="text-6xl md:text-7xl lg:text-[90px] font-heading text-white leading-[0.85] tracking-tight"
               >
-                Master the<br />
-                <span className="text-gradient font-serif italic font-normal tracking-wide">Perfect Score</span>
+                পারফেক্ট স্কোর<br />
+                <span className="text-gradient font-serif italic font-normal tracking-wide">আয়ত্ত করুন</span>
               </motion.h1>
 
               {/* Subtext */}
               <motion.p variants={fadeUp} className="text-xl text-slate-400 font-medium max-w-xl mx-auto lg:mx-0 leading-relaxed">
-                Ditch the guesswork. Use Bangladeshi's most advanced AI engine to secure your <span className="text-white font-black underline decoration-accent/50 underline-offset-8 transition-all hover:decoration-accent">Band 8.5+</span> on the first try.
+                আন্দাজনির্ভর প্রস্তুতি বাদ দিন। বাংলাদেশের সবচেয়ে উন্নত AI ইঞ্জিন দিয়ে প্রথম চেষ্টাতেই আপনার <span className="text-white font-black underline decoration-accent/50 underline-offset-8 transition-all hover:decoration-accent">Band 8.5+</span> নিশ্চিত করার প্রস্তুতি নিন।
               </motion.p>
 
               {/* CTAs */}
               <motion.div variants={fadeUp} className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4 pt-4">
                 <Link href="/onboarding" className="w-full sm:w-auto">
                   <Button size="lg" className="w-full sm:w-auto h-16 px-12 rounded-2xl bg-grape-600 text-white font-black text-lg gap-3 hover:bg-grape-500 transition-all btn-glow border-0 active:scale-[0.98]">
-                    Start Free Prep <Zap className="w-5 h-5 fill-current" />
+                    ফ্রি প্রস্তুতি শুরু করুন <Zap className="w-5 h-5 fill-current" />
                   </Button>
                 </Link>
                 <Button
@@ -98,7 +98,7 @@ export default function Home() {
                   size="lg"
                   className="w-full sm:w-auto h-16 px-10 rounded-2xl border-white/20 bg-white/5 backdrop-blur-sm text-white hover:bg-white/10 transition-all font-black text-lg gap-3 active:scale-[0.98]"
                 >
-                  <Play className="w-5 h-5 fill-current" /> See How It Works
+                  <Play className="w-5 h-5 fill-current" /> যেভাবে কাজ করে
                 </Button>
               </motion.div>
 
@@ -116,7 +116,7 @@ export default function Home() {
                       whileHover={{ y: -5, zIndex: 10 }}
                       src={src} 
                       className="w-12 h-12 rounded-full border-2 border-slate-900 object-cover shadow-2xl" 
-                      alt="User" 
+                      alt="শিক্ষার্থী" 
                     />
                   ))}
                 </div>
@@ -124,7 +124,7 @@ export default function Home() {
                   <div className="flex items-center justify-center lg:justify-start gap-1">
                     {[...Array(5)].map((_, i) => <Star key={i} className="w-4 h-4 fill-amber-400 text-amber-400 shadow-sm" />)}
                   </div>
-                  <p className="text-sm font-bold text-slate-400 tracking-wide">Trusted by 45,000+ candidates · 94% Success Rate</p>
+                  <p className="text-sm font-bold text-slate-400 tracking-wide">৪৫,০০০+ পরীক্ষার্থীর আস্থা · ৯৪% সফলতার হার</p>
                 </div>
               </motion.div>
             </motion.div>
@@ -141,7 +141,7 @@ export default function Home() {
                 <div className="overflow-hidden rounded-[2rem] border border-white/5 aspect-[4/3]">
                   <img 
                     src="https://images.unsplash.com/photo-1460925895917-afdab827c52f?q=80&w=2026&auto=format&fit=crop" 
-                    alt="Perfect Score Dashboard" 
+                    alt="পারফেক্ট স্কোর ড্যাশবোর্ড" 
                     className="w-full h-full object-cover grayscale-[20%] hover:grayscale-0 transition-all duration-700"
                   />
                 </div>
@@ -156,7 +156,7 @@ export default function Home() {
                     <Trophy className="w-5 h-5 text-green-500" />
                   </div>
                   <div>
-                    <p className="text-[10px] uppercase tracking-widest font-black text-slate-400">Target Reached</p>
+                    <p className="text-[10px] uppercase tracking-widest font-black text-slate-400">লক্ষ্য অর্জিত</p>
                     <p className="text-xl font-black text-foreground italic">Band 8.5</p>
                   </div>
                 </motion.div>
@@ -171,8 +171,8 @@ export default function Home() {
                     <Zap className="w-5 h-5 text-white" />
                   </div>
                   <div className="text-white">
-                    <p className="text-[10px] uppercase tracking-widest font-black opacity-80">AI Analysis</p>
-                    <p className="text-lg font-black">Live Score Prediction</p>
+                    <p className="text-[10px] uppercase tracking-widest font-black opacity-80">AI অ্যানালাইসিস</p>
+                    <p className="text-lg font-black">লাইভ স্কোর প্রেডিকশন</p>
                   </div>
                 </motion.div>
               </div>
@@ -195,10 +195,10 @@ export default function Home() {
             className="grid grid-cols-2 md:grid-cols-4 gap-8 md:gap-0 md:divide-x divide-border"
           >
             {[
-              { label: "Active Students", val: "45K+", icon: Users },
-              { label: "Band 8.0 Success", val: "94%", icon: TrendingUp },
-              { label: "Practice Drills", val: "5,000+", icon: BrainCircuit },
-              { label: "Official Mocks", val: "200+", icon: BarChart3 },
+              { label: "সক্রিয় শিক্ষার্থী", val: "৪৫K+", icon: Users },
+              { label: "Band 8.0 সাফল্য", val: "৯৪%", icon: TrendingUp },
+              { label: "প্র্যাকটিস ড্রিল", val: "৫,০০০+", icon: BrainCircuit },
+              { label: "অফিশিয়াল মক", val: "২০০+", icon: BarChart3 },
             ].map((s, i) => (
               <motion.div key={i} variants={fadeUp} className="flex items-center gap-4 md:px-10 first:pl-0 last:pr-0">
                 <div className="w-12 h-12 rounded-2xl bg-accent/10 flex items-center justify-center shrink-0">
@@ -226,10 +226,10 @@ export default function Home() {
           >
             <motion.p variants={fadeUp} className="text-accent font-extrabold text-[11px] uppercase tracking-[0.4em] mb-4">The Engine</motion.p>
             <motion.h2 variants={fadeUp} className="text-4xl md:text-6xl font-black text-foreground tracking-tight leading-tight">
-              Science-backed <span className="font-serif font-normal italic text-slate-400 dark:text-slate-500">preparation.</span>
+              কার্যকরী বিজ্ঞানভিত্তিক{" "}<span className="font-serif font-normal italic text-slate-400 dark:text-slate-500">প্রস্তুতি।</span>
             </motion.h2>
             <motion.p variants={fadeUp} className="mt-4 text-lg text-slate-500 font-medium">
-              Every module is engineered around how memory and language acquisition actually works.
+              মেমরি ও ভাষা শেখার বাস্তব পদ্ধতি মাথায় রেখেই প্রতিটি মডিউল নিখুঁতভাবে সাজানো।
             </motion.p>
           </motion.div>
 
@@ -243,22 +243,22 @@ export default function Home() {
           >
             <FeatureCard
               icon={<Video className="w-5 h-5" />}
-              name="Masterclasses"
-              desc="Deep-dive strategies into the psychology of the exam, not just question formats."
+              name="মাস্টারক্লাস"
+              desc="শুধু প্রশ্নের ধরন নয়, পরীক্ষার মনস্তত্ত্ব বুঝে গভীর স্ট্র্যাটেজি শেখার ক্লাস।"
               img="https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=2070&auto=format&fit=crop"
               color="from-blue-50 to-white"
             />
             <FeatureCard
               icon={<PenTool className="w-5 h-5" />}
-              name="Active Practice"
-              desc="Mirror your actual exam interface. High-stakes simulations for zero test-day nerves."
+              name="অ্যাকটিভ প্র্যাকটিস"
+              desc="আসল পরীক্ষার ইন্টারফেসের মতোই অনুশীলন করুন। টেস্ট ডের চাপ কমাতে হাই-স্টেকস সিমুলেশন।"
               img="https://images.unsplash.com/photo-1501504905252-473c47e087f8?q=80&w=1974&auto=format&fit=crop"
               color="from-grape-50 to-white"
             />
             <FeatureCard
               icon={<BookOpen className="w-5 h-5" />}
-              name="Lexical Hub"
-              desc="Scientific SRS (Spaced Repetition) to lock Band 8.0 vocabulary into long-term memory."
+              name="লেক্সিক্যাল হাব"
+              desc="Band 8.0 ভোকাবুলারি দীর্ঘমেয়াদে মনে রাখতে বৈজ্ঞানিক SRS (Spaced Repetition)।"
               img="https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?q=80&w=1973&auto=format&fit=crop"
               color="from-amber-50 to-white"
             />
@@ -284,17 +284,17 @@ export default function Home() {
               className="space-y-10"
             >
               <div className="space-y-4">
-                <motion.p variants={fadeUp} className="text-accent font-extrabold text-[11px] uppercase tracking-[0.4em]">Methodology</motion.p>
+                <motion.p variants={fadeUp} className="text-accent font-extrabold text-[11px] uppercase tracking-[0.4em]">মেথডোলজি</motion.p>
                 <motion.h2 variants={fadeUp} className="text-4xl md:text-6xl font-black text-white tracking-tight leading-tight">
-                  Your path to<br />Band <span className="text-accent italic">9.0.</span>
+                  আপনার Band <span className="text-accent italic">9.0</span><br />-এর পথ।
                 </motion.h2>
               </div>
 
               <motion.div variants={stagger} className="space-y-8">
                 {[
-                  { num: "01", title: "Diagnostic Assessment", desc: "Our AI analyzes 42 distinct skill clusters to map your current proficiency with precision." },
-                  { num: "02", title: "Adaptive Study Plan", desc: "A living calendar generated daily based on your speed, accuracy, and remaining time." },
-                  { num: "03", title: "Deep Simulation", desc: "Weekly full-length mocks that replicate the official testing software bit-by-bit." },
+                  { num: "০১", title: "ডায়াগনস্টিক অ্যাসেসমেন্ট", desc: "আপনার বর্তমান দক্ষতা নির্ভুলভাবে বুঝতে আমাদের AI ৪২টি আলাদা স্কিল ক্লাস্টার বিশ্লেষণ করে।" },
+                  { num: "০২", title: "অ্যাডাপটিভ স্টাডি প্ল্যান", desc: "আপনার গতি, নির্ভুলতা ও হাতে থাকা সময় অনুযায়ী প্রতিদিন আপডেট হওয়া স্মার্ট ক্যালেন্ডার।" },
+                  { num: "০৩", title: "ডিপ সিমুলেশন", desc: "অফিশিয়াল টেস্টিং সফটওয়্যারের অভিজ্ঞতা প্রায় হুবহু দিতে প্রতি সপ্তাহে ফুল-লেংথ মক।" },
                 ].map((step, i) => (
                   <motion.div key={i} variants={fadeUp} className="flex gap-6 group">
                     <span className="text-accent font-serif text-3xl font-normal shrink-0 mt-0.5 group-hover:scale-110 transition-transform origin-center">{step.num}</span>
@@ -309,7 +309,7 @@ export default function Home() {
               <motion.div variants={fadeUp}>
                 <Link href="/login">
                   <Button size="lg" className="h-14 px-8 bg-white text-slate-900 rounded-2xl font-bold text-sm hover:bg-accent hover:text-white transition-all shadow-xl gap-2">
-                    Analyze My Score Now <ArrowRight className="w-4 h-4" />
+                    এখনই আমার স্কোর বিশ্লেষণ করুন <ArrowRight className="w-4 h-4" />
                   </Button>
                 </Link>
               </motion.div>
@@ -325,7 +325,7 @@ export default function Home() {
             >
               <img
                 src="https://images.unsplash.com/photo-1543269865-cbf427effbad?q=80&w=2070&auto=format&fit=crop"
-                alt="Collaboration"
+                alt="সহযোগিতামূলক IELTS প্রস্তুতি"
                 className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-700 scale-105 group-hover:scale-100"
               />
               <div className="absolute inset-0 flex items-center justify-center bg-slate-900/50 group-hover:bg-slate-900/30 transition-colors duration-500">
@@ -352,9 +352,9 @@ export default function Home() {
             variants={stagger}
             className="mb-16 text-center"
           >
-            <motion.p variants={fadeUp} className="text-accent font-extrabold text-[11px] uppercase tracking-[0.4em] mb-4">Social Proof</motion.p>
+            <motion.p variants={fadeUp} className="text-accent font-extrabold text-[11px] uppercase tracking-[0.4em] mb-4">সোশ্যাল প্রুফ</motion.p>
             <motion.h2 variants={fadeUp} className="text-4xl md:text-5xl font-black text-foreground tracking-tight">
-              Real students. <span className="font-serif font-normal italic text-slate-400 dark:text-slate-500">Real results.</span>
+              সত্যিকারের শিক্ষার্থী। <span className="font-serif font-normal italic text-slate-400 dark:text-slate-500">সত্যিকারের ফলাফল।</span>
             </motion.h2>
           </motion.div>
 
@@ -366,9 +366,9 @@ export default function Home() {
             className="grid grid-cols-1 md:grid-cols-3 gap-6"
           >
             {[
-              { name: "Klara Fischer", score: "8.5", univ: "Oxford University", desc: "The writing breakdown was the game changer. My Task 2 structure finally clicked after years of struggle.", flag: "🇩🇪" },
-              { name: "Arjun Mehta", score: "8.0", univ: "University of Toronto", desc: "Practice Mocks were identical to the real exam. I felt absolutely zero nerves on test day.", flag: "🇮🇳" },
-              { name: "Chen Wei", score: "9.0", univ: "Stanford MBA", desc: "Perfect Score gave me the specific lexical range I needed to hit the elusive Band 9.0.", flag: "🇨🇳" },
+              { name: "Klara Fischer", score: "8.5", univ: "Oxford University", desc: "Writing breakdown-টাই ছিল আমার টার্নিং পয়েন্ট। বহু বছরের সংগ্রামের পর Task 2 structure অবশেষে পুরোপুরি পরিষ্কার হয়েছে।", flag: "🇩🇪" },
+              { name: "Arjun Mehta", score: "8.0", univ: "University of Toronto", desc: "Practice Mock একদম বাস্তব পরীক্ষার মতো ছিল। টেস্ট ডেতে আমার নার্ভাসনেস ছিল শূন্য।", flag: "🇮🇳" },
+              { name: "Chen Wei", score: "9.0", univ: "Stanford MBA", desc: "Band 9.0 পাওয়ার জন্য যে নির্দিষ্ট lexical range দরকার ছিল, Perfect Score সেটাই আমাকে দিয়েছে।", flag: "🇨🇳" },
             ].map((t, i) => (
               <motion.div
                 key={i}
@@ -381,7 +381,7 @@ export default function Home() {
                   {[...Array(5)].map((_, j) => <Star key={j} className="w-4 h-4 fill-amber-400 text-amber-400" />)}
                 </div>
                 {/* Quote */}
-                <p className="text-foreground/80 font-medium leading-relaxed flex-1 italic font-serif text-lg">"{t.desc}"</p>
+                <p className="text-foreground/80 font-medium leading-relaxed flex-1 italic font-serif text-lg">“{t.desc}”</p>
                 {/* Author */}
                 <div className="flex items-center justify-between pt-4 border-t border-border">
                   <div className="flex items-center gap-3">
@@ -414,29 +414,29 @@ export default function Home() {
         >
           <motion.div variants={fadeUp} className="inline-flex items-center gap-2 mb-6 px-4 py-2 bg-accent/10 rounded-full border border-accent/20">
             <Sparkles className="w-3.5 h-3.5 text-accent" />
-            <span className="text-[11px] font-extrabold uppercase tracking-widest text-accent">Start Free Today</span>
+            <span className="text-[11px] font-extrabold uppercase tracking-widest text-accent">আজই ফ্রি শুরু করুন</span>
           </motion.div>
           <motion.h2 variants={fadeUp} className="text-4xl md:text-6xl font-black text-foreground tracking-tight leading-tight mb-6">
-            Your Band 8+ is<br />
-            <span className="font-serif font-normal italic text-accent">one decision away.</span>
+            আপনার Band 8+<br />
+            <span className="font-serif font-normal italic text-accent">মাত্র একটি সিদ্ধান্ত দূরে।</span>
           </motion.h2>
           <motion.p variants={fadeUp} className="text-lg text-slate-500 font-medium mb-10 max-w-xl mx-auto leading-relaxed">
-            Join 45,000+ candidates who chose precision over guesswork. No credit card required.
+            ৪৫,০০০+ পরীক্ষার্থীর সঙ্গে যুক্ত হোন, যারা আন্দাজের বদলে বেছে নিয়েছে নির্ভুল প্রস্তুতি। কোনো ক্রেডিট কার্ড লাগবে না।
           </motion.p>
           <motion.div variants={fadeUp} className="flex flex-wrap gap-4 justify-center">
             <Link href="/onboarding">
               <Button size="lg" className="h-16 px-12 rounded-2xl bg-grape-600 text-white hover:bg-grape-500 font-bold text-lg gap-2 shadow-2xl shadow-grape-600/40 btn-glow border-0">
-                Get Started Free <ArrowRight className="w-5 h-5" />
+                ফ্রি শুরু করুন <ArrowRight className="w-5 h-5" />
               </Button>
             </Link>
             <Link href="/pricing">
               <Button variant="outline" size="lg" className="h-16 px-10 rounded-2xl border-border text-foreground hover:bg-surface transition-all font-bold text-sm">
-                View Pricing
+                মূল্য দেখুন
               </Button>
             </Link>
           </motion.div>
           <motion.p variants={fadeUp} className="mt-6 text-xs text-slate-400 font-medium">
-            ✓ Free forever plan &nbsp; ✓ No credit card required &nbsp; ✓ Cancel anytime
+            ✓ ফ্রি ফরএভার প্ল্যান &nbsp; ✓ ক্রেডিট কার্ড লাগবে না &nbsp; ✓ যেকোনো সময় বাতিল করুন
           </motion.p>
         </motion.div>
       </section>
@@ -477,7 +477,7 @@ function FeatureCard({ icon, name, desc, img, color }: {
         <h3 className="text-xl font-black text-foreground tracking-tight group-hover:text-accent transition-colors">{name}</h3>
         <p className="text-slate-500 font-medium leading-relaxed text-sm">{desc}</p>
         <Link href="/login" className="inline-flex items-center gap-2 text-[11px] font-extrabold uppercase tracking-widest text-accent hover:gap-3 transition-all pt-2">
-          Explore Module <ArrowRight className="w-3.5 h-3.5" />
+          মডিউল দেখুন <ArrowRight className="w-3.5 h-3.5" />
         </Link>
       </div>
     </motion.div>

@@ -31,24 +31,16 @@ export interface PracticeQuestionSet {
 export interface VocabularyWord {
   id: string;
   word: string;
-  definition: string;
-  collocations: string[];
-  example: string;
+  type: string;
+  englishMeaning: string;
+  banglaMeaning: string;
+  sentence: string;
+  sentenceBanglaMeaning: string;
   masteryLevel: 0 | 1 | 2 | 3 | 4;
-  category: VocabularyCategory;
+  group: VocabularyGroup;
 }
 
-export type VocabularyCategory = 
-  | 'Technology' 
-  | 'Health & Medicine' 
-  | 'Education' 
-  | 'Science & Innovation' 
-  | 'Politics & Governance' 
-  | 'Media & Communication' 
-  | 'Economics & Finance' 
-  | 'Urban Development' 
-  | 'Social Life & Culture' 
-  | 'Environment';
+export type VocabularyGroup = string;
 
 export interface MockTest {
   id: string;
@@ -119,6 +111,31 @@ export interface StudyPlan {
   }[];
 }
 
+export interface PlanSummary {
+  title: string;
+  slug: string;
+  partCount: number;
+  unit: "Day" | "Week" | "Month" | "Part";
+}
+
+export interface PlanPart {
+  key: string;
+  title: string;
+  video_lectures: string;
+  practise_questions: string;
+  vocab_practise: string;
+  mock?: string;
+}
+
+export interface TimelinePlan extends PlanSummary {
+  parts: PlanPart[];
+}
+
+export interface UserPlanProgress {
+  followingPlans: string[];
+  completed: Record<string, string[]>;
+}
+
 export interface StudyDay {
   dayNumber: number;
   tasks: StudyTask[];
@@ -156,6 +173,13 @@ export interface TestQuestion {
   type: string;
   options?: string[];
   targetWords?: number;
+  taskType?: "task1" | "task2";
+  visualType?: string;
+  data?: {
+    columns?: string[];
+    rows?: string[][];
+  };
+  essayType?: string;
 }
 
 export interface TestSection {
@@ -164,6 +188,7 @@ export interface TestSection {
   skill: Skill;
   position: number;
   timeLimitSeconds: number;
+  taskType?: "task1" | "task2";
   passage?: string;
   audioUrl?: string;
   segments?: { id: string; label: string; timestamp: number }[];
@@ -219,8 +244,10 @@ export interface TypingPassage {
   bestAccuracy: number | null;
 }
 
-export interface VocabularyCategorySummary {
-  category: VocabularyCategory;
+export interface VocabularyGroupSummary {
+  group: VocabularyGroup;
   wordCount: number;
   mastery: number;
 }
+
+export type VocabularyCategorySummary = VocabularyGroupSummary;
