@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useLayoutEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
@@ -62,6 +62,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [planMenuOpen, setPlanMenuOpen] = useState(false);
+
+  useLayoutEffect(() => {
+    document.documentElement.classList.remove("dark");
+  }, []);
 
   useEffect(() => {
     let isMounted = true;

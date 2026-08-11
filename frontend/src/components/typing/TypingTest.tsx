@@ -131,7 +131,8 @@ export function TypingTest({ text, onFinish }: TypingTestProps) {
         <div className="font-serif whitespace-pre-wrap break-words">
           {charArray.map((char, i) => {
             let colorClass = "text-secondary opacity-60";
-            const isCurrent = userInput.length === i;
+            const showCursorBefore = !isFinished && userInput.length === 0 && i === 0;
+            const showCursorAfter = !isFinished && userInput.length === i + 1;
             
             if (i < userInput.length) {
               const userChar = userInput[i];
@@ -142,15 +143,9 @@ export function TypingTest({ text, onFinish }: TypingTestProps) {
 
             return (
               <span key={i} className={`relative ${colorClass} transition-colors duration-200`}>
-                {isCurrent && (
-                  <motion.div 
-                    layoutId="cursor"
-                    className="absolute -left-[1px] top-[10%] bottom-[10%] w-[2px] bg-primary"
-                    animate={{ opacity: [1, 0] }}
-                    transition={{ repeat: Infinity, duration: 0.8 }}
-                  />
-                )}
+                {showCursorBefore && <TypingCursor position="before" />}
                 {char}
+                {showCursorAfter && <TypingCursor position="after" />}
               </span>
             );
           })}
@@ -204,6 +199,17 @@ export function TypingTest({ text, onFinish }: TypingTestProps) {
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+function TypingCursor({ position }: { position: "before" | "after" }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`typing-cursor pointer-events-none absolute top-[8%] h-[84%] w-[2px] bg-primary ${
+        position === "before" ? "-left-[1px]" : "-right-[1px]"
+      }`}
+    />
   );
 }
 
