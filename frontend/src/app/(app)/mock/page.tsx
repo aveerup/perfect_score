@@ -1,6 +1,6 @@
 import { ArrowUpRight } from "lucide-react";
 
-const STUDENT_PORTAL_URL = "https://perfectscore.ieltstest.center/";
+const STUDENT_PORTAL_URL = "https://perfectscore.ieltstest.center/smart-login/";
 
 export default function MockExamPage() {
   return (

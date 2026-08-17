@@ -29,3 +29,14 @@ cd backend
 Authentication uses Supabase sessions stored in `HttpOnly` cookies. All learning, profile, content, progress, and search routes require authentication. The schema enables row-level security for user-owned data.
 
 Use `CORS_ORIGINS` for production frontend domains and set `AUTH_COOKIE_SECURE=true` when serving over HTTPS.
+
+## Redis response cache
+
+Redis is optional. When `REDIS_URL` is configured, the API caches common read responses once and user-specific read responses per user.
+
+```env
+REDIS_URL=redis://localhost:6379/0
+CACHE_TTL_SECONDS=1800
+```
+
+`CACHE_TTL_SECONDS` defaults to 1800 seconds, or 30 minutes. User-specific cache entries are indexed by user id and cleared after profile updates, onboarding, practice/mock activity, lecture progress, vocabulary reviews, study-plan changes, typing attempts, and logout.

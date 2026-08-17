@@ -4,7 +4,6 @@ import React, { useState } from "react";
 import { Skill, VideoLecture } from "@/lib/types";
 import { useApiData } from "@/lib/api";
 import Link from "next/link";
-import { Play } from "lucide-react";
 
 export default function LecturesHomePage() {
   const [activeFilter, setActiveFilter] = useState<Skill | "All">("All");
@@ -46,45 +45,32 @@ export default function LecturesHomePage() {
         </div>
       </div>
 
-      {/* LECTURE GRID */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+      {/* LECTURE LIST */}
+      <div className="divide-y divide-border border-y border-border">
         {filteredLectures.map((lecture) => {
           return (
-            <div key={lecture.id} className="group flex flex-col space-y-4">
-              <Link 
-                href={`/lectures/${lecture.id}`}
-                className="relative aspect-video bg-on-surface flex items-center justify-center rounded-sm overflow-hidden transition-all hover:brightness-110"
-              >
-                <div className="w-16 h-16 rounded-full bg-surface bg-opacity-20 backdrop-blur-sm flex items-center justify-center border border-surface border-opacity-30 group-hover:scale-110 transition-transform">
-                  <Play className="w-6 h-6 text-surface fill-current ml-1" />
-                </div>
-                
-                {/* Underline progress bar */}
-                <div className="absolute bottom-0 left-0 right-0 h-1 bg-white bg-opacity-20">
-                  <div 
-                    className="h-full bg-white transition-all duration-500"
-                    style={{ width: `${lecture.progress}%` }}
-                  />
-                </div>
-              </Link>
-              
-              <div className="space-y-3">
-                <div className="flex justify-between items-start gap-4">
-                  <h3 className="text-[15px] font-semibold text-on-surface tracking-tight leading-tight uppercase underline-offset-4 group-hover:underline">
-                    {lecture.title}
-                  </h3>
-                  <span className="text-xs font-light text-secondary whitespace-nowrap">Band {lecture.bandRange}</span>
-                </div>
-                <div className="flex items-center gap-3">
-                   <span className="text-[10px] font-semibold px-2 py-0.5 border border-outline-variant rounded-full text-secondary uppercase tracking-widest">
-                     {lecture.skill}
-                   </span>
-                   <span className="text-[10px] font-medium text-outline uppercase tracking-widest">
-                     {lecture.duration}
-                   </span>
+            <Link
+              key={lecture.id}
+              href={`/lectures/${lecture.id}`}
+              className="group grid gap-3 py-5 transition-colors hover:bg-surface-container sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+            >
+              <div className="min-w-0 space-y-2">
+                <h3 className="text-[15px] font-semibold text-on-surface tracking-tight leading-tight uppercase underline-offset-4 group-hover:underline">
+                  {lecture.title}
+                </h3>
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="text-[10px] font-semibold px-2 py-0.5 border border-outline-variant rounded-full text-secondary uppercase tracking-widest">
+                    {lecture.skill}
+                  </span>
+                  <span className="text-[10px] font-medium text-outline uppercase tracking-widest">
+                    {lecture.duration}
+                  </span>
                 </div>
               </div>
-            </div>
+              <span className="text-xs font-light text-secondary whitespace-nowrap sm:text-right">
+                Band {lecture.bandRange}
+              </span>
+            </Link>
           );
         })}
       </div>

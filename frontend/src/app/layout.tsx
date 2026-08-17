@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { Inter, Hind_Siliguri, Noto_Sans_Bengali, Prata } from "next/font/google";
 import localFont from "next/font/local";
 import "./globals.css";
-import { MascotWidget } from "@/components/mascot/MascotWidget";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -66,7 +65,6 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col font-sans">
         {children}
-        <MascotWidget />
       </body>
     </html>
   );

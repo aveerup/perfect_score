@@ -36,6 +36,7 @@ from .schemas import (
     VocabularyReviewRequest,
 )
 from . import repository
+from .cache import cached_common_json, cached_user_json, delete_user_cache
 
 
 logger = logging.getLogger(__name__)
@@ -218,6 +219,22 @@ def find_by_id(items: list[dict[str, Any]], item_id: str, label: str) -> dict[st
     if item is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"{label} not found")
     return item
+
+
+def user_id_from_access_token(access_token: str) -> str | None:
+    try:
+        response = httpx2.get(
+            f"{SUPABASE_URL}/auth/v1/user",
+            headers=supabase_headers(access_token),
+            timeout=10.0,
+        )
+    except httpx2.RequestError:
+        return None
+
+    if response.status_code != status.HTTP_200_OK:
+        return None
+
+    return response.json().get("id")
 
 
 def skill_name(skill: str) -> str:
@@ -693,6 +710,10 @@ def logout(
     response: Response,
     access_token: str = Depends(require_access_token),
 ) -> dict[str, bool]:
+    user_id = user_id_from_access_token(access_token)
+    if user_id:
+        delete_user_cache(user_id)
+
     delete_auth_cookies(response)
 
     try:
@@ -719,7 +740,7 @@ def logout(
 
 @router.get("/me")
 def me(user: dict[str, Any] = Depends(require_supabase_user)) -> dict[str, Any]:
-    return user
+    return cached_user_json(user["id"], "me", lambda: user)
 
 
 @router.patch("/me")
@@ -727,7 +748,9 @@ def update_me(
     payload: ProfileUpdate,
     user: dict[str, Any] = Depends(require_supabase_user),
 ) -> dict[str, Any]:
-    return repository.update_profile(user["id"], payload.model_dump(exclude_none=True))
+    updated = repository.update_profile(user["id"], payload.model_dump(exclude_none=True))
+    delete_user_cache(user["id"])
+    return updated
 
 
 @router.post("/onboarding/diagnostic")
@@ -751,25 +774,34 @@ def finish_onboarding(
         user["id"],
         {"targetBand": payload.targetBand, "targetScore": payload.targetBand, "examDate": payload.examDate},
     )
+    delete_user_cache(user["id"])
     return {"diagnostic": record, "studyPlan": repository.get_study_plan(user["id"])}
 
 
 @router.get("/dashboard")
 def dashboard(user: dict[str, Any] = Depends(require_supabase_user)) -> dict[str, Any]:
-    return repository.dashboard(user["id"])
+    return cached_user_json(
+        user["id"],
+        "dashboard",
+        lambda: repository.dashboard(user["id"]),
+    )
 
 
 @router.get("/profile")
 def profile(user: dict[str, Any] = Depends(require_supabase_user)) -> dict[str, Any]:
-    return {
-        "user": repository.get_profile(user["id"]),
-        "achievements": ACHIEVEMENTS,
-        "accountManagement": [
-            {"label": "Personal Information", "desc": "Names, contact details, and locations"},
-            {"label": "Security & Privacy", "desc": "Password, 2FA, and linked accounts"},
-            {"label": "Notifications", "desc": "Study reminders and system alerts"},
-        ],
-    }
+    return cached_user_json(
+        user["id"],
+        "profile",
+        lambda: {
+            "user": repository.get_profile(user["id"]),
+            "achievements": ACHIEVEMENTS,
+            "accountManagement": [
+                {"label": "Personal Information", "desc": "Names, contact details, and locations"},
+                {"label": "Security & Privacy", "desc": "Password, 2FA, and linked accounts"},
+                {"label": "Notifications", "desc": "Study reminders and system alerts"},
+            ],
+        },
+    )
 
 
 @router.get("/lectures")
@@ -777,7 +809,11 @@ def lectures(
     skill: str | None = Query(default=None),
     user: dict[str, Any] = Depends(require_supabase_user),
 ) -> list[dict[str, Any]]:
-    return repository.list_lectures(user["id"], skill)
+    return cached_user_json(
+        user["id"],
+        f"lectures:{skill or 'all'}",
+        lambda: repository.list_lectures(user["id"], skill),
+    )
 
 
 @router.get("/lectures/{lecture_id}")
@@ -785,7 +821,11 @@ def lecture_detail(
     lecture_id: str,
     user: dict[str, Any] = Depends(require_supabase_user),
 ) -> dict[str, Any]:
-    lecture = repository.get_lecture(user["id"], lecture_id)
+    lecture = cached_user_json(
+        user["id"],
+        f"lectures:{lecture_id}",
+        lambda: repository.get_lecture(user["id"], lecture_id),
+    )
     if not lecture:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lecture not found")
     return lecture
@@ -797,13 +837,15 @@ def update_lecture_progress(
     payload: LectureProgressRequest,
     user: dict[str, Any] = Depends(require_supabase_user),
 ) -> dict[str, Any]:
-    return repository.save_lecture_progress(
+    progress = repository.save_lecture_progress(
         user["id"],
         lecture_id,
         payload.progress,
         payload.lastPositionSeconds,
         payload.watched if payload.watched is not None else payload.progress >= 95,
     )
+    delete_user_cache(user["id"])
+    return progress
 
 
 @router.get("/practice")
@@ -812,21 +854,28 @@ def practice(
     difficulty: str | None = Query(default=None),
     user: dict[str, Any] = Depends(require_supabase_user),
 ) -> list[dict[str, Any]]:
-    items = [
-        item for item in repository.list_tests(user["id"], "practice")
-        if item["skill"] not in {"R", "W"}
-    ]
-    if not skill or skill in {"All", "L"}:
-        items.extend(repository.list_listening_tests(user["id"]))
-    if not skill or skill in {"All", "R"}:
-        items.extend(repository.list_reading_tests(user["id"]))
-    if not skill or skill in {"All", "W"}:
-        items.extend(repository.list_writing_tests(user["id"]))
-    if skill and skill != "All":
-        items = [item for item in items if item["skill"] == skill]
-    if difficulty and difficulty != "All":
-        items = [item for item in items if item["difficulty"] == difficulty]
-    return items
+    def build_practice_list() -> list[dict[str, Any]]:
+        items = [
+            item for item in repository.list_tests(user["id"], "practice")
+            if item["skill"] not in {"R", "W"}
+        ]
+        if not skill or skill in {"All", "L"}:
+            items.extend(repository.list_listening_tests(user["id"]))
+        if not skill or skill in {"All", "R"}:
+            items.extend(repository.list_reading_tests(user["id"]))
+        if not skill or skill in {"All", "W"}:
+            items.extend(repository.list_writing_tests(user["id"]))
+        if skill and skill != "All":
+            items = [item for item in items if item["skill"] == skill]
+        if difficulty and difficulty != "All":
+            items = [item for item in items if item["difficulty"] == difficulty]
+        return items
+
+    return cached_user_json(
+        user["id"],
+        f"practice:{skill or 'all'}:{difficulty or 'all'}",
+        build_practice_list,
+    )
 
 
 @router.get("/practice/{practice_id}")
@@ -834,43 +883,46 @@ def get_practice(
     practice_id: str,
     _: dict[str, Any] = Depends(require_supabase_user),
 ) -> dict[str, Any]:
-    listening_test = repository.get_listening_test(practice_id)
-    if listening_test:
-        section = listening_test["sections"][0]
+    def build_practice_detail() -> dict[str, Any]:
+        listening_test = repository.get_listening_test(practice_id)
+        if listening_test:
+            section = listening_test["sections"][0]
+            return {
+                **listening_test,
+                **{key: value for key, value in section.items() if key not in {"id", "position"}},
+                "activeSection": section["name"],
+                "questionCount": len(section["questions"]),
+            }
+        reading_test = repository.get_reading_test(practice_id)
+        if reading_test:
+            section = reading_test["sections"][0]
+            return {
+                **reading_test,
+                **{key: value for key, value in section.items() if key not in {"id", "position"}},
+                "activeSection": section["name"],
+                "questionCount": len(section["questions"]),
+            }
+        writing_test = repository.get_writing_test(practice_id)
+        if writing_test:
+            section = writing_test["sections"][0]
+            return {
+                **writing_test,
+                **{key: value for key, value in section.items() if key not in {"id", "position"}},
+                "activeSection": section["name"],
+                "questionCount": len(section["questions"]),
+            }
+        test = repository.get_test(practice_id)
+        if not test or test["testType"] != "practice":
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Practice set not found")
+        section = test["sections"][0]
         return {
-            **listening_test,
+            **test,
             **{key: value for key, value in section.items() if key not in {"id", "position"}},
             "activeSection": section["name"],
             "questionCount": len(section["questions"]),
         }
-    reading_test = repository.get_reading_test(practice_id)
-    if reading_test:
-        section = reading_test["sections"][0]
-        return {
-            **reading_test,
-            **{key: value for key, value in section.items() if key not in {"id", "position"}},
-            "activeSection": section["name"],
-            "questionCount": len(section["questions"]),
-        }
-    writing_test = repository.get_writing_test(practice_id)
-    if writing_test:
-        section = writing_test["sections"][0]
-        return {
-            **writing_test,
-            **{key: value for key, value in section.items() if key not in {"id", "position"}},
-            "activeSection": section["name"],
-            "questionCount": len(section["questions"]),
-        }
-    test = repository.get_test(practice_id)
-    if not test or test["testType"] != "practice":
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Practice set not found")
-    section = test["sections"][0]
-    return {
-        **test,
-        **{key: value for key, value in section.items() if key not in {"id", "position"}},
-        "activeSection": section["name"],
-        "questionCount": len(section["questions"]),
-    }
+
+    return cached_common_json(f"practice-detail:{practice_id}", build_practice_detail)
 
 
 @router.post("/practice/{practice_id}/sessions")
@@ -883,13 +935,14 @@ def create_practice_session(
     if repository.listening_test_no(practice_id) is not None:
         session = repository.create_listening_attempt(user["id"], practice_id)
     elif repository.reading_test_no(practice_id) is not None:
-        session = repository.draft_reading_attempt(practice_id)
+        session = repository.create_reading_attempt(user["id"], practice_id)
     elif repository.writing_test_key(practice_id) is not None:
-        session = repository.draft_writing_attempt(practice_id)
+        session = repository.create_writing_attempt(user["id"], practice_id)
     else:
         session = repository.create_attempt(user["id"], practice_id)
     session["mode"] = payload.mode
     session["practiceId"] = practice_id
+    delete_user_cache(user["id"])
     return {"session": session, "practice": detail}
 
 
@@ -909,6 +962,7 @@ def update_practice_session(
         session = repository.update_writing_attempt(user["id"], session_id, values)
     if not session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    delete_user_cache(user["id"])
     return session
 
 
@@ -938,6 +992,7 @@ def submit_practice_session(
                 score,
                 result,
             )
+            delete_user_cache(user["id"])
             return {"session": session, "result": result}
 
         reading_attempt = repository.get_reading_attempt(user["id"], session_id)
@@ -958,6 +1013,7 @@ def submit_practice_session(
                 score,
                 result,
             )
+            delete_user_cache(user["id"])
             return {"session": session, "result": result}
 
         if repository.reading_test_no(session_id) is not None:
@@ -976,6 +1032,7 @@ def submit_practice_session(
                 score,
                 result,
             )
+            delete_user_cache(user["id"])
             return {"session": session, "result": result}
 
         writing_attempt = repository.get_writing_attempt(user["id"], session_id)
@@ -996,6 +1053,7 @@ def submit_practice_session(
                 score,
                 result,
             )
+            delete_user_cache(user["id"])
             return {"session": session, "result": result}
 
         if repository.writing_test_key(session_id) is not None:
@@ -1015,6 +1073,7 @@ def submit_practice_session(
                 score,
                 result,
             )
+            delete_user_cache(user["id"])
             return {"session": session, "result": result}
 
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
@@ -1040,6 +1099,7 @@ def submit_practice_session(
         result,
         graded,
     )
+    delete_user_cache(user["id"])
     return {"session": session, "result": result}
 
 
@@ -1048,26 +1108,37 @@ def get_practice_result(
     practice_id: str,
     user: dict[str, Any] = Depends(require_supabase_user),
 ) -> dict[str, Any]:
-    listening_result = repository.latest_listening_result(user["id"], practice_id)
-    if listening_result:
-        return listening_result
-    reading_result = repository.latest_reading_result(user["id"], practice_id)
-    if reading_result:
-        return reading_result
-    writing_result = repository.latest_writing_result(user["id"], practice_id)
-    if writing_result:
-        return writing_result
-    result = repository.latest_result(user["id"], practice_id)
-    if not result:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Result not found")
-    return result
+    def build_practice_result() -> dict[str, Any]:
+        listening_result = repository.latest_listening_result(user["id"], practice_id)
+        if listening_result:
+            return listening_result
+        reading_result = repository.latest_reading_result(user["id"], practice_id)
+        if reading_result:
+            return reading_result
+        writing_result = repository.latest_writing_result(user["id"], practice_id)
+        if writing_result:
+            return writing_result
+        result = repository.latest_result(user["id"], practice_id)
+        if not result:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Result not found")
+        return result
+
+    return cached_user_json(
+        user["id"],
+        f"practice-result:{practice_id}",
+        build_practice_result,
+    )
 
 
 @router.get("/mock")
 def mock_tests(
     user: dict[str, Any] = Depends(require_supabase_user),
 ) -> list[dict[str, Any]]:
-    return repository.list_tests(user["id"], "mock")
+    return cached_user_json(
+        user["id"],
+        "mock",
+        lambda: repository.list_tests(user["id"], "mock"),
+    )
 
 
 @router.get("/mock/{mock_id}")
@@ -1075,7 +1146,7 @@ def get_mock(
     mock_id: str,
     _: dict[str, Any] = Depends(require_supabase_user),
 ) -> dict[str, Any]:
-    test = repository.get_test(mock_id)
+    test = cached_common_json(f"mock-detail:{mock_id}", lambda: repository.get_test(mock_id))
     if not test or test["testType"] != "mock":
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Mock test not found")
     return test
@@ -1091,6 +1162,7 @@ def create_mock_session(
     session = repository.create_attempt(user["id"], mock_id)
     session["mode"] = payload.mode
     session["mockId"] = mock_id
+    delete_user_cache(user["id"])
     return {"session": session, "mock": detail}
 
 
@@ -1132,6 +1204,7 @@ def submit_mock_session(
         result,
         graded,
     )
+    delete_user_cache(user["id"])
     return {"session": session, "result": result}
 
 
@@ -1140,10 +1213,17 @@ def mock_result(
     mock_id: str,
     user: dict[str, Any] = Depends(require_supabase_user),
 ) -> dict[str, Any]:
-    result = repository.latest_result(user["id"], mock_id)
-    if not result:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Result not found")
-    return result
+    def build_mock_result() -> dict[str, Any]:
+        result = repository.latest_result(user["id"], mock_id)
+        if not result:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Result not found")
+        return result
+
+    return cached_user_json(
+        user["id"],
+        f"mock-result:{mock_id}",
+        build_mock_result,
+    )
 
 
 @router.get("/vocabulary")
@@ -1152,21 +1232,34 @@ def vocabulary(
     group: str | None = Query(default=None),
     user: dict[str, Any] = Depends(require_supabase_user),
 ) -> list[dict[str, Any]]:
-    return repository.list_vocabulary(user["id"], group or category)
+    group_name = group or category or "all"
+    return cached_user_json(
+        user["id"],
+        f"vocabulary:{group_name}",
+        lambda: repository.list_vocabulary(user["id"], group or category),
+    )
 
 
 @router.get("/vocabulary/groups")
 def vocabulary_groups(
     user: dict[str, Any] = Depends(require_supabase_user),
 ) -> list[dict[str, Any]]:
-    return repository.vocabulary_groups(user["id"])
+    return cached_user_json(
+        user["id"],
+        "vocabulary-groups",
+        lambda: repository.vocabulary_groups(user["id"]),
+    )
 
 
 @router.get("/vocabulary/categories")
 def vocabulary_categories(
     user: dict[str, Any] = Depends(require_supabase_user),
 ) -> list[dict[str, Any]]:
-    return repository.vocabulary_groups(user["id"])
+    return cached_user_json(
+        user["id"],
+        "vocabulary-categories",
+        lambda: repository.vocabulary_groups(user["id"]),
+    )
 
 
 @router.get("/vocabulary/{word_id}")
@@ -1174,9 +1267,13 @@ def vocabulary_word(
     word_id: str,
     user: dict[str, Any] = Depends(require_supabase_user),
 ) -> dict[str, Any]:
-    word = next(
-        (item for item in repository.list_vocabulary(user["id"]) if item["id"] == word_id),
-        None,
+    word = cached_user_json(
+        user["id"],
+        f"vocabulary-word:{word_id}",
+        lambda: next(
+            (item for item in repository.list_vocabulary(user["id"]) if item["id"] == word_id),
+            None,
+        ),
     )
     if not word:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vocabulary word not found")
@@ -1188,19 +1285,25 @@ def review_vocabulary(
     payload: VocabularyReviewRequest,
     user: dict[str, Any] = Depends(require_supabase_user),
 ) -> dict[str, Any]:
-    return repository.save_vocabulary_review(
+    review = repository.save_vocabulary_review(
         user["id"], payload.wordId, payload.result
     )
+    delete_user_cache(user["id"])
+    return review
 
 
 @router.get("/plans")
 def plans(user: dict[str, Any] = Depends(require_supabase_user)) -> list[dict[str, Any]]:
-    return repository.list_plans()
+    return cached_common_json("plans", repository.list_plans)
 
 
 @router.get("/plans/progress")
 def plan_progress(user: dict[str, Any] = Depends(require_supabase_user)) -> dict[str, Any]:
-    return repository.get_user_plan_progress(user["id"])
+    return cached_user_json(
+        user["id"],
+        "plans-progress",
+        lambda: repository.get_user_plan_progress(user["id"]),
+    )
 
 
 @router.get("/plans/{plan_slug}")
@@ -1208,7 +1311,7 @@ def plan_detail(
     plan_slug: str,
     user: dict[str, Any] = Depends(require_supabase_user),
 ) -> dict[str, Any]:
-    plan = repository.get_plan(plan_slug)
+    plan = cached_common_json(f"plan-detail:{plan_slug}", lambda: repository.get_plan(plan_slug))
     if not plan:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found")
     return plan
@@ -1229,12 +1332,17 @@ def update_plan_part(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     if not progress:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found")
+    delete_user_cache(user["id"])
     return progress
 
 
 @router.get("/study-plan")
 def study_plan(user: dict[str, Any] = Depends(require_supabase_user)) -> dict[str, Any]:
-    return repository.get_study_plan(user["id"])
+    return cached_user_json(
+        user["id"],
+        "study-plan",
+        lambda: repository.get_study_plan(user["id"]),
+    )
 
 
 @router.patch("/study-plan/tasks/{task_id}")
@@ -1246,6 +1354,7 @@ def update_study_task(
     task = repository.update_study_task(user["id"], task_id, completed)
     if not task:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    delete_user_cache(user["id"])
     return task
 
 
@@ -1253,7 +1362,11 @@ def update_study_task(
 def typing_essays(
     user: dict[str, Any] = Depends(require_supabase_user),
 ) -> list[dict[str, Any]]:
-    return repository.list_typing_passages(user["id"])
+    return cached_user_json(
+        user["id"],
+        "typing-essays",
+        lambda: repository.list_typing_passages(user["id"]),
+    )
 
 
 @router.post("/typing/attempts")
@@ -1261,13 +1374,15 @@ def save_typing_attempt(
     payload: TypingAttemptRequest,
     user: dict[str, Any] = Depends(require_supabase_user),
 ) -> dict[str, Any]:
-    return repository.save_typing_attempt(
+    attempt = repository.save_typing_attempt(
         user["id"],
         payload.essayId,
         payload.wpm,
         payload.accuracy,
         payload.durationSeconds,
     )
+    delete_user_cache(user["id"])
+    return attempt
 
 
 @router.get("/search", response_model=SearchResponse)
@@ -1275,23 +1390,31 @@ def search(
     q: str = Query(min_length=1),
     user: dict[str, Any] = Depends(require_supabase_user),
 ) -> dict[str, Any]:
-    return repository.search_content(user["id"], q)
+    return cached_user_json(
+        user["id"],
+        f"search:{q.strip().lower()}",
+        lambda: repository.search_content(user["id"], q),
+    )
 
 
 @router.get("/content/bootstrap")
 def bootstrap(
     user: dict[str, Any] = Depends(require_supabase_user),
 ) -> dict[str, Any]:
-    return {
-        "user": repository.get_profile(user["id"]),
-        "dashboard": repository.dashboard(user["id"]),
-        "videos": repository.list_lectures(user["id"]),
-        "practiceQuestions": repository.list_tests(user["id"], "practice"),
-        "vocabularyWords": repository.list_vocabulary(user["id"]),
-        "mockTests": repository.list_tests(user["id"], "mock"),
-        "studyPlan": repository.get_study_plan(user["id"]),
-        "ieltsEssays": repository.list_typing_passages(user["id"]),
-    }
+    return cached_user_json(
+        user["id"],
+        "content-bootstrap",
+        lambda: {
+            "user": repository.get_profile(user["id"]),
+            "dashboard": repository.dashboard(user["id"]),
+            "videos": repository.list_lectures(user["id"]),
+            "practiceQuestions": repository.list_tests(user["id"], "practice"),
+            "vocabularyWords": repository.list_vocabulary(user["id"]),
+            "mockTests": repository.list_tests(user["id"], "mock"),
+            "studyPlan": repository.get_study_plan(user["id"]),
+            "ieltsEssays": repository.list_typing_passages(user["id"]),
+        },
+    )
 
 
 @router.get("/subscription")

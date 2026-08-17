@@ -6,6 +6,34 @@ import { ArrowLeft, CheckCircle2, Play } from "lucide-react";
 import { api, useApiData } from "@/lib/api";
 import { VideoLecture } from "@/lib/types";
 
+const VIMEO_PLAYER_OPTIONS: Record<string, string> = {
+  title: "0",
+  byline: "0",
+  portrait: "0",
+  badge: "0",
+  like: "0",
+  watch_later: "0",
+  share: "0",
+  vimeo_logo: "0",
+  dnt: "1",
+};
+
+function buildVimeoEmbedUrl(lecture: VideoLecture) {
+  const embedUrl = lecture.embedUrl || (lecture.vimeoId ? `https://player.vimeo.com/video/${lecture.vimeoId}` : "");
+  if (!embedUrl) return "";
+
+  try {
+    const url = new URL(embedUrl);
+    Object.entries(VIMEO_PLAYER_OPTIONS).forEach(([key, value]) => {
+      url.searchParams.set(key, value);
+    });
+    return url.toString();
+  } catch {
+    const params = new URLSearchParams(VIMEO_PLAYER_OPTIONS);
+    return `${embedUrl}${embedUrl.includes("?") ? "&" : "?"}${params.toString()}`;
+  }
+}
+
 export default function VideoPlayerPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -26,6 +54,7 @@ export default function VideoPlayerPage() {
 
   if (loading) return <div className="py-20 text-center text-slate-400">Loading lecture...</div>;
   if (error || !lecture) return <div className="py-20 text-center text-red-500">{error || "Lecture not found"}</div>;
+  const vimeoEmbedUrl = buildVimeoEmbedUrl(lecture);
 
   return (
     <div className="space-y-8 pb-12">
@@ -36,13 +65,19 @@ export default function VideoPlayerPage() {
       <div className="grid lg:grid-cols-3 gap-10">
         <div className="lg:col-span-2 space-y-7">
           <div className="aspect-video bg-black rounded-2xl overflow-hidden">
-            <iframe
-              src={lecture.embedUrl}
-              title={lecture.title}
-              className="w-full h-full"
-              allow="autoplay; fullscreen; picture-in-picture"
-              allowFullScreen
-            />
+            {vimeoEmbedUrl ? (
+              <iframe
+                src={vimeoEmbedUrl}
+                title={lecture.title}
+                className="w-full h-full"
+                allow="autoplay; fullscreen; picture-in-picture"
+                allowFullScreen
+              />
+            ) : (
+              <div className="flex h-full items-center justify-center px-6 text-center text-sm font-semibold text-slate-400">
+                Video embed is not available for this lecture.
+              </div>
+            )}
           </div>
 
           <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-5">

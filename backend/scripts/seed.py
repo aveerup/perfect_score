@@ -19,7 +19,7 @@ LISTENING_TESTS: list[dict[str, Any]] = [
         "test_no": 1,
         "title": "Listening Practice Set 1 - Everyday Conversation",
         "category": "Easy",
-        "audio_path": "ielts-listening-practice/test-1.mp3",
+        "audio_path": "set_1.mp3",
         "questions": [
             {
                 "id": "lt1-q1",
@@ -69,7 +69,7 @@ LISTENING_TESTS: list[dict[str, Any]] = [
         "test_no": 2,
         "title": "Listening Practice Set 2 - Campus Conversation",
         "category": "Easy",
-        "audio_path": "ielts-listening-practice/test-2.mp3",
+        "audio_path": "set_2.mp3",
         "questions": [
             {
                 "id": "lt2-q1",
@@ -124,7 +124,7 @@ LISTENING_TESTS: list[dict[str, Any]] = [
         "test_no": 3,
         "title": "Listening Practice Set 3 - Hotel Booking",
         "category": "Medium",
-        "audio_path": "ielts-listening-practice/test-3.mp3",
+        "audio_path": "set_3.mp3",
         "questions": [
             {
                 "id": "lt3-q1",
