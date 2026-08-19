@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { AuthJoinPanel, type AuthMode } from "@/components/auth/AuthJoinPanel";
+import { Footer as SiteFooter } from "@/components/layout/Footer";
 import {
   ArrowRight,
   BookOpenText,
@@ -12,12 +13,14 @@ import {
   ChevronDown,
   Keyboard,
   ListChecks,
+  Mail,
   PlayCircle,
+  Phone,
   Timer,
 } from "lucide-react";
 
 const assets = {
-  logo: "/new_landing_page_resources/favicon.png",
+  logo: "/new_landing_page_resources/favicon_bg_remove.png",
   reading: "/new_landing_page_resources/exam.jpg",
   listening: "/new_landing_page_resources/mock-test.jpg",
   notes: "/new_landing_page_resources/study.jpg",
@@ -30,8 +33,9 @@ const navItems = [
   { label: "Curriculum", href: "#curriculum" },
   { label: "Study plans", href: "#study-plans" },
   { label: "Results", href: "#results" },
-  { label: "FAQ", href: "#faq" },
   { label: "Pricing", href: "#pricing" },
+  { label: "FAQ", href: "#faq" },
+  { label: "Contact", href: "#contact" },
 ];
 
 const features = [
@@ -207,21 +211,14 @@ const faqs = [
 
 function LogoMark({ small = false }: { small?: boolean }) {
   return (
-    <div
-      className={[
-        "inline-flex items-center bg-white text-black",
-        small ? "h-10 gap-2" : "h-16 gap-2.5",
-      ].join(" ")}
-    >
-      <span className={["grid shrink-0 place-items-center bg-black text-white", small ? "h-[18px] w-[18px]" : "h-7 w-7"].join(" ")}>
-        <Check className={small ? "h-3.5 w-3.5" : "h-5 w-5"} />
-      </span>
-      <span className={["font-black leading-[0.9] tracking-normal", small ? "text-[9px]" : "text-[13px]"].join(" ")}>
-        PERFECT
-        <br />
-        SCORE
-      </span>
-    </div>
+    <Image
+      src={assets.logo}
+      alt="Perfect Score"
+      width={64}
+      height={64}
+      priority={!small}
+      className={["object-contain", small ? "h-11 w-11" : "h-20 w-20"].join(" ")}
+    />
   );
 }
 
@@ -704,6 +701,43 @@ function FAQ() {
   );
 }
 
+function ContactSection() {
+  return (
+    <Section id="contact" className="bg-white">
+      <div className="grid gap-12 py-24 lg:grid-cols-[0.88fr_1.12fr] lg:items-center lg:py-28">
+        <div>
+          <Eyebrow>Contact & payment</Eyebrow>
+          <h2 className="max-w-[620px] text-4xl font-black leading-tight text-black md:text-[40px]">
+            Need help joining Perfect Score?
+          </h2>
+          <p className="mt-5 max-w-[560px] text-base font-medium leading-7 text-neutral-500">
+            Send a message for support, account help or payment confirmation. The mobile number below is also the bKash payment number.
+          </p>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="border border-neutral-200 p-7">
+            <Mail className="h-6 w-6 stroke-[1.8] text-black" />
+            <p className="mt-8 text-[12px] font-medium uppercase tracking-[0.24em] text-neutral-500">Email</p>
+            <p className="mt-2 break-words text-xl font-black text-black">
+              miftaurr314@gmail.com
+            </p>
+          </div>
+
+          <div className="border border-black bg-black p-7 text-white">
+            <Phone className="h-6 w-6 stroke-[1.8]" />
+            <p className="mt-8 text-[12px] font-medium uppercase tracking-[0.24em] text-neutral-400">Mobile / bKash payment</p>
+            <p className="mt-2 text-3xl font-black">01782592006</p>
+            <p className="mt-4 text-sm font-medium leading-6 text-neutral-300">
+              Use this number for bKash payment, then fill out the fields in the join section.
+            </p>
+          </div>
+        </div>
+      </div>
+    </Section>
+  );
+}
+
 function FinalCTA({ onAuthOpen }: { onAuthOpen: (mode: AuthMode) => void }) {
   return (
     <section className="bg-black py-28 text-center text-white">
@@ -721,42 +755,6 @@ function FinalCTA({ onAuthOpen }: { onAuthOpen: (mode: AuthMode) => void }) {
         </button>
       </div>
     </section>
-  );
-}
-
-function Footer() {
-  return (
-    <footer className="bg-white">
-      <div className="mx-auto w-full max-w-[1262px] px-5 py-16 md:px-8">
-        <div className="grid gap-12 md:grid-cols-4">
-          <div>
-            <LogoMark small />
-            <p className="mt-7 max-w-[260px] text-base font-medium leading-7 text-neutral-500">
-              IELTS preparation for students who&apos;d rather practise than shop for courses.
-            </p>
-          </div>
-          {[
-            ["Platform", ["What you get", "Curriculum", "Study plans", "Pricing"]],
-            ["IELTS", ["Listening", "Reading", "Writing", "Speaking"]],
-            ["Support", ["FAQ", "Contact", "Terms", "Privacy"]],
-          ].map(([heading, links]) => (
-            <div key={heading as string}>
-              <h3 className="text-[13px] font-black uppercase tracking-[0.24em] text-black">{heading as string}</h3>
-              <div className="mt-5 space-y-3">
-                {(links as string[]).map((link) => (
-                  <a key={link} href={link === "FAQ" ? "#faq" : "#"} className="block text-base font-medium text-neutral-500 hover:text-black">
-                    {link}
-                  </a>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-        <div className="mt-16 border-t border-neutral-200 pt-7 text-sm font-medium text-neutral-500">
-          © 2026 Perfect Score. All rights reserved.
-        </div>
-      </div>
-    </footer>
   );
 }
 
@@ -796,13 +794,14 @@ export default function Home() {
       <SkillsCovered />
       <Membership />
       <Curriculum />
-      <Results />
       <StudyPlans />
+      <Results />
       <Pricing onAuthOpen={scrollToAuth} />
       <AuthSection mode={authMode} onModeChange={setAuthMode} />
       <FAQ />
+      <ContactSection />
       <FinalCTA onAuthOpen={scrollToAuth} />
-      <Footer />
+      <SiteFooter />
     </main>
   );
 }
