@@ -21,6 +21,7 @@ from .data import (
 )
 from .schemas import (
     LectureProgressRequest,
+    JoinRequest,
     LoginRequest,
     OnboardingRequest,
     PasswordResetRequest,
@@ -616,6 +617,24 @@ def signup(payload: SignupRequest, response: Response) -> dict[str, Any]:
         "user": auth_user_to_app_user(auth_session["user"]),
         "requiresEmailConfirmation": not bool(auth_session.get("access_token")),
     }
+
+
+@router.post("/transactions", status_code=status.HTTP_201_CREATED)
+def create_transaction(payload: JoinRequest) -> dict[str, Any]:
+    try:
+        transaction = repository.create_transaction(
+            payload.email,
+            payload.transactionId,
+            payload.planName,
+        )
+    except Exception as exc:
+        logger.exception("Unable to save join transaction", exc_info=exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to save join request",
+        ) from exc
+
+    return {"transaction": transaction}
 
 
 @router.post("/auth/password-reset")

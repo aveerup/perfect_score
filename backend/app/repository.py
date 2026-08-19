@@ -167,6 +167,28 @@ def update_profile(user_id: str, values: dict[str, Any]) -> dict[str, Any]:
     return _profile_row(row)
 
 
+def create_transaction(email: str, transaction_id: str, plan_name: str) -> dict[str, Any]:
+    row = fetch_one(
+        """
+        insert into public.transactions (email, transaction_id, plan_name)
+        values (%s, %s, %s)
+        returning id, email, transaction_id, plan_name, status, created_at
+        """,
+        (email.strip().lower(), transaction_id.strip(), plan_name.strip()),
+    )
+    if not row:
+        raise RuntimeError("Unable to save transaction")
+
+    return {
+        "id": str(row["id"]),
+        "email": row["email"],
+        "transactionId": row["transaction_id"],
+        "planName": row["plan_name"],
+        "status": row["status"],
+        "createdAt": _iso(row["created_at"]),
+    }
+
+
 def list_lectures(user_id: str, skill: str | None = None) -> list[dict[str, Any]]:
     params: list[Any] = [user_id]
     skill_filter = ""

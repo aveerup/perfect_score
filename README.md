@@ -2,9 +2,11 @@
 
 IELTS learning MVP with a Next.js frontend, FastAPI backend, Supabase Auth/Postgres, and manually uploaded Vimeo lectures.
 
+Production VPS deployment notes are in [DEPLOYMENT.md](DEPLOYMENT.md).
+
 ## Local setup
 
-1. Copy `backend/.env.example` to `backend/.env` and add the Supabase URL, publishable key, secret key, and Postgres connection string.
+1. Create `backend/.env` and add the Supabase URL, publishable key, secret key, and Postgres connection string.
 2. Copy `frontend/.env.example` to `frontend/.env.local`.
 3. Install dependencies:
 

@@ -19,6 +19,12 @@ class SignupRequest(BaseModel):
     fullName: str = Field(min_length=2, max_length=100)
 
 
+class JoinRequest(BaseModel):
+    email: str
+    transactionId: str = Field(min_length=3, max_length=120)
+    planName: str = Field(min_length=2, max_length=120)
+
+
 class PasswordResetRequest(BaseModel):
     email: str
 
