@@ -8,7 +8,8 @@ import { type AuthUser } from "@/lib/auth";
 import { SearchOverlay } from "@/components/layout/SearchOverlay";
 import { 
   Home, Video, PenTool, BookOpen, ClipboardCheck, Calendar,
-  Search, User, Keyboard, LogOut, Settings, Trophy, CheckCircle2, ChevronDown
+  Search, User, Keyboard, LogOut, Settings, Trophy, CheckCircle2, ChevronDown,
+  ShieldCheck,
 } from "lucide-react";
 
 const navItems = [
@@ -21,6 +22,8 @@ const navItems = [
   { name: "Typing", href: "/typing", icon: Keyboard },
   { name: "Profile", href: "/profile", icon: User },
 ];
+
+const adminNavItem = { name: "Admin", href: "/admin", icon: ShieldCheck };
 
 const planLinks = [
   { name: "1 Week", href: "/plan/1-week-crash-plan" },
@@ -110,8 +113,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const visibleNavItems = user?.role === "admin" ? [...navItems, adminNavItem] : navItems;
+
   const getTitle = () => {
-    const item = navItems.find(i => pathname.startsWith(i.href));
+    const item = visibleNavItems.find(i => pathname.startsWith(i.href));
     return item ? item.name : "Dashboard";
   };
 
@@ -147,9 +152,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
 
         {/* Nav Items */}
-        <nav className="flex-1 py-10 px-4 overflow-visible">
+        <nav className="min-h-0 flex-1 overflow-y-auto overflow-x-visible px-4 py-10">
           <div className="space-y-2">
-            {navItems.map((item, i) => {
+            {visibleNavItems.map((item, i) => {
               const isActive = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href));
               const Icon = item.icon;
               if (item.name === "Plan") {
@@ -316,7 +321,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       {/* MOBILE BOTTOM NAV */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-surface/95 backdrop-blur-md border-t border-border z-30 h-16 px-2">
         <ul className="flex items-center justify-around h-full">
-          {navItems.slice(0, 5).map((item) => {
+          {visibleNavItems.slice(0, 5).map((item) => {
             const isActive = pathname.startsWith(item.href);
             const Icon = item.icon;
             return (

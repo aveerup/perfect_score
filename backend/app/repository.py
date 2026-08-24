@@ -189,6 +189,106 @@ def create_transaction(email: str, transaction_id: str, plan_name: str) -> dict[
     }
 
 
+def _transaction_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": str(row["id"]),
+        "email": row["email"],
+        "transactionId": row["transaction_id"],
+        "planName": row["plan_name"],
+        "status": row["status"],
+        "createdAt": _iso(row["created_at"]),
+        "updatedAt": _iso(row["updated_at"]),
+    }
+
+
+def _admin_user_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": str(row["id"]),
+        "email": row["email"],
+        "name": row["full_name"],
+        "role": row["role"],
+        "currentBand": float(row["current_band"]),
+        "targetBand": float(row["target_band"] or 7.5),
+        "createdAt": _iso(row["created_at"]),
+        "updatedAt": _iso(row["updated_at"]),
+    }
+
+
+def get_admin_user(user_id: str) -> dict[str, Any] | None:
+    row = fetch_one(
+        """
+        select id, email, full_name, role, current_band, target_band, created_at, updated_at
+        from public.profiles
+        where id = %s
+        """,
+        (user_id,),
+    )
+    return _admin_user_row(row) if row else None
+
+
+def list_admin_users() -> list[dict[str, Any]]:
+    rows = fetch_all(
+        """
+        select id, email, full_name, role, current_band, target_band, created_at, updated_at
+        from public.profiles
+        order by created_at desc
+        """
+    )
+    return [
+        _admin_user_row(row)
+        for row in rows
+    ]
+
+
+def list_admin_transactions() -> list[dict[str, Any]]:
+    rows = fetch_all(
+        """
+        select id, email, transaction_id, plan_name, status, created_at, updated_at
+        from public.transactions
+        order by created_at desc
+        """
+    )
+    return [_transaction_row(row) for row in rows]
+
+
+def get_pending_transaction(transaction_id: str) -> dict[str, Any] | None:
+    row = fetch_one(
+        """
+        select id, email, transaction_id, plan_name, status, created_at, updated_at
+        from public.transactions
+        where id = %s and status = 'pending'
+        """,
+        (transaction_id,),
+    )
+    return _transaction_row(row) if row else None
+
+
+def approve_transaction(transaction_id: str) -> dict[str, Any] | None:
+    row = fetch_one(
+        """
+        update public.transactions
+        set status = 'approved', updated_at = now()
+        where id = %s and status = 'pending'
+        returning id, email, transaction_id, plan_name, status, created_at, updated_at
+        """,
+        (transaction_id,),
+    )
+    return _transaction_row(row) if row else None
+
+
+def approve_transaction_for_email(transaction_id: str, email: str) -> dict[str, Any] | None:
+    row = fetch_one(
+        """
+        update public.transactions
+        set status = 'approved', updated_at = now()
+        where id = %s and status = 'pending' and lower(email) = lower(%s)
+        returning id, email, transaction_id, plan_name, status, created_at, updated_at
+        """,
+        (transaction_id, email),
+    )
+    return _transaction_row(row) if row else None
+
+
 def list_lectures(user_id: str, skill: str | None = None) -> list[dict[str, Any]]:
     params: list[Any] = [user_id]
     skill_filter = ""

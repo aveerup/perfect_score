@@ -20,6 +20,7 @@ from .data import (
     today_iso,
 )
 from .schemas import (
+    AdminCreateUserRequest,
     LectureProgressRequest,
     JoinRequest,
     LoginRequest,
@@ -46,6 +47,7 @@ load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_KEY = os.getenv("SUPABASE_PUBLISHABLE_KEY") or os.getenv("SUPABASE_ANON_KEY", "")
+SUPABASE_ADMIN_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_SECRET_KEY", "")
 AUTH_COOKIE_SECURE = os.getenv("AUTH_COOKIE_SECURE", "false").lower() == "true"
 AUTH_COOKIE_SAMESITE = os.getenv(
     "AUTH_COOKIE_SAMESITE",
@@ -105,6 +107,20 @@ def supabase_headers(access_token: str | None = None) -> dict[str, str]:
     if access_token:
         headers["Authorization"] = f"Bearer {access_token}"
     return headers
+
+
+def supabase_admin_headers() -> dict[str, str]:
+    if not SUPABASE_URL or not SUPABASE_ADMIN_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Supabase admin operations are not configured",
+        )
+
+    return {
+        "apikey": SUPABASE_ADMIN_KEY,
+        "Authorization": f"Bearer {SUPABASE_ADMIN_KEY}",
+        "Content-Type": "application/json",
+    }
 
 
 def supabase_error_message(response: httpx2.Response) -> str:
@@ -213,6 +229,12 @@ def require_supabase_user(
     profile = repository.ensure_user_profile(user)
     profile["lastLogin"] = user.get("lastLogin")
     return profile
+
+
+def require_admin(user: dict[str, Any] = Depends(require_supabase_user)) -> dict[str, Any]:
+    if user["role"] != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+    return user
 
 
 def find_by_id(items: list[dict[str, Any]], item_id: str, label: str) -> dict[str, Any]:
@@ -635,6 +657,78 @@ def create_transaction(payload: JoinRequest) -> dict[str, Any]:
         ) from exc
 
     return {"transaction": transaction}
+
+
+@router.get("/admin/users")
+def admin_users(_: dict[str, Any] = Depends(require_admin)) -> list[dict[str, Any]]:
+    return repository.list_admin_users()
+
+
+@router.post("/admin/users", status_code=status.HTTP_201_CREATED)
+def admin_create_user(
+    payload: AdminCreateUserRequest,
+    _: dict[str, Any] = Depends(require_admin),
+) -> dict[str, Any]:
+    email = payload.email.strip().lower()
+    default_name = email.split("@", 1)[0] if email else "Learner"
+    pending_transaction = None
+
+    if payload.transactionId:
+        pending_transaction = repository.get_pending_transaction(payload.transactionId)
+        if not pending_transaction:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Pending transaction not found",
+            )
+        if pending_transaction["email"].strip().lower() != email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="User email must match the pending transaction email",
+            )
+
+    try:
+        supabase_response = httpx2.post(
+            f"{SUPABASE_URL}/auth/v1/admin/users",
+            headers=supabase_admin_headers(),
+            json={
+                "email": email,
+                "password": payload.password,
+                "email_confirm": True,
+                "user_metadata": {"full_name": default_name},
+            },
+            timeout=10.0,
+        )
+    except httpx2.RequestError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication service is unavailable",
+        ) from exc
+
+    if supabase_response.status_code not in {
+        status.HTTP_200_OK,
+        status.HTTP_201_CREATED,
+    }:
+        raise HTTPException(
+            status_code=supabase_response.status_code,
+            detail=supabase_error_message(supabase_response),
+        )
+
+    user = auth_user_to_app_user(supabase_response.json())
+    profile = repository.ensure_user_profile(user)
+    admin_user = repository.get_admin_user(profile["id"])
+    approved_transaction = None
+    if pending_transaction:
+        approved_transaction = repository.approve_transaction_for_email(
+            pending_transaction["id"],
+            email,
+        )
+    delete_user_cache(profile["id"])
+    return {"user": admin_user or profile, "transaction": approved_transaction}
+
+
+@router.get("/admin/transactions")
+def admin_transactions(_: dict[str, Any] = Depends(require_admin)) -> list[dict[str, Any]]:
+    return repository.list_admin_transactions()
 
 
 @router.post("/auth/password-reset")
