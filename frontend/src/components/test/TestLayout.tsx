@@ -18,6 +18,9 @@ interface TestLayoutProps {
   totalQuestions: number;
   currentQuestion?: number;
   onQuestionSelect?: (index: number) => void;
+  questionLabels?: string[];
+  answeredQuestions?: boolean[];
+  largeQuestionNav?: boolean;
 }
 
 export function TestLayout({
@@ -33,7 +36,10 @@ export function TestLayout({
   isLastQuestion = false,
   totalQuestions,
   currentQuestion = 1,
-  onQuestionSelect
+  onQuestionSelect,
+  questionLabels,
+  answeredQuestions,
+  largeQuestionNav = false,
 }: TestLayoutProps) {
   const [timeLeft, setTimeLeft] = useState(initialTime);
   const [isFullScreen, setIsFullScreen] = useState(false);
@@ -130,19 +136,21 @@ export function TestLayout({
       </header>
 
       {/* Question Nav Bar (Only for desktop) */}
-      <div className="h-10 bg-slate-50 border-b border-slate-200 flex items-center px-6 overflow-x-auto no-scrollbar shrink-0">
-        <div className="flex items-center gap-1">
+      <div className={`${largeQuestionNav ? "h-14" : "h-10"} bg-slate-50 border-b border-slate-200 flex items-center px-6 overflow-x-auto no-scrollbar shrink-0`}>
+        <div className={`flex items-center ${largeQuestionNav ? "gap-2" : "gap-1"}`}>
           {Array.from({ length: totalQuestions }).map((_, i) => (
             <button
               key={i}
               onClick={() => onQuestionSelect?.(i + 1)}
-              className={`w-7 h-7 text-[10px] font-bold flex items-center justify-center transition-all rounded-[2px] ${
+              className={`${largeQuestionNav ? "h-10 min-w-10 px-2 text-sm" : "w-7 h-7 text-[10px]"} font-bold flex items-center justify-center transition-all rounded-[2px] ${
                 currentQuestion === i + 1
                   ? "bg-black text-white shadow-md transform scale-110"
-                  : "bg-white border border-slate-200 text-slate-500 hover:border-slate-400"
+                  : answeredQuestions?.[i]
+                    ? "bg-emerald-500 border border-emerald-500 text-white hover:bg-emerald-600"
+                    : "bg-white border border-slate-200 text-slate-500 hover:border-slate-400"
               }`}
             >
-              {i + 1}
+              {questionLabels?.[i] ?? i + 1}
             </button>
           ))}
         </div>

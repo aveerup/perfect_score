@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import json
 import logging
 import os
 from pathlib import Path
@@ -33,6 +34,7 @@ from .schemas import (
     SessionCreateRequest,
     SessionPatchRequest,
     SessionSubmitRequest,
+    SpeakingEvaluationRequest,
     SignupRequest,
     TypingAttemptRequest,
     VocabularyReviewRequest,
@@ -48,6 +50,7 @@ load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_KEY = os.getenv("SUPABASE_PUBLISHABLE_KEY") or os.getenv("SUPABASE_ANON_KEY", "")
 SUPABASE_ADMIN_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_SECRET_KEY", "")
+SPEAKING_AUDIO_BUCKET = os.getenv("SPEAKING_AUDIO_BUCKET", "speaking_tests_audio").strip("/")
 AUTH_COOKIE_SECURE = os.getenv("AUTH_COOKIE_SECURE", "false").lower() == "true"
 AUTH_COOKIE_SAMESITE = os.getenv(
     "AUTH_COOKIE_SAMESITE",
@@ -235,6 +238,36 @@ def require_admin(user: dict[str, Any] = Depends(require_supabase_user)) -> dict
     if user["role"] != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
     return user
+
+
+def upload_speaking_audio(object_path: str, content: bytes, content_type: str) -> str:
+    endpoint = f"{SUPABASE_URL}/storage/v1/object/{SPEAKING_AUDIO_BUCKET}/{object_path}"
+    try:
+        response = httpx2.post(
+            endpoint,
+            headers={
+                **supabase_admin_headers(),
+                "Content-Type": content_type or "audio/webm",
+                "x-upsert": "true",
+            },
+            content=content,
+            timeout=30.0,
+        )
+    except httpx2.RequestError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Storage service is unavailable",
+        ) from exc
+
+    if response.status_code not in {
+        status.HTTP_200_OK,
+        status.HTTP_201_CREATED,
+    }:
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=supabase_error_message(response),
+        )
+    return object_path
 
 
 def find_by_id(items: list[dict[str, Any]], item_id: str, label: str) -> dict[str, Any]:
@@ -731,6 +764,38 @@ def admin_transactions(_: dict[str, Any] = Depends(require_admin)) -> list[dict[
     return repository.list_admin_transactions()
 
 
+@router.get("/admin/evaluations/speaking")
+def admin_speaking_evaluations(_: dict[str, Any] = Depends(require_admin)) -> list[dict[str, Any]]:
+    return repository.list_admin_speaking_attempts()
+
+
+@router.get("/admin/evaluations/speaking/{attempt_id}")
+def admin_speaking_evaluation_detail(
+    attempt_id: str,
+    _: dict[str, Any] = Depends(require_admin),
+) -> dict[str, Any]:
+    attempt = repository.get_admin_speaking_attempt(attempt_id)
+    if not attempt:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Speaking attempt not found")
+    return attempt
+
+
+@router.patch("/admin/evaluations/speaking/{attempt_id}")
+def admin_save_speaking_evaluation(
+    attempt_id: str,
+    payload: SpeakingEvaluationRequest,
+    admin: dict[str, Any] = Depends(require_admin),
+) -> dict[str, Any]:
+    audio_marks = {
+        question_id: marks.model_dump()
+        for question_id, marks in payload.audioMarks.items()
+    }
+    attempt = repository.save_admin_speaking_evaluation(attempt_id, admin["id"], audio_marks)
+    if not attempt:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Speaking attempt not found")
+    return attempt
+
+
 @router.post("/auth/password-reset")
 def request_password_reset(payload: PasswordResetRequest) -> dict[str, bool]:
     try:
@@ -970,7 +1035,7 @@ def practice(
     def build_practice_list() -> list[dict[str, Any]]:
         items = [
             item for item in repository.list_tests(user["id"], "practice")
-            if item["skill"] not in {"R", "W"}
+            if item["skill"] not in {"R", "W", "S"}
         ]
         if not skill or skill in {"All", "L"}:
             items.extend(repository.list_listening_tests(user["id"]))
@@ -978,6 +1043,8 @@ def practice(
             items.extend(repository.list_reading_tests(user["id"]))
         if not skill or skill in {"All", "W"}:
             items.extend(repository.list_writing_tests(user["id"]))
+        if not skill or skill in {"All", "S"}:
+            items.extend(repository.list_speaking_tests(user["id"]))
         if skill and skill != "All":
             items = [item for item in items if item["skill"] == skill]
         if difficulty and difficulty != "All":
@@ -1024,8 +1091,17 @@ def get_practice(
                 "activeSection": section["name"],
                 "questionCount": len(section["questions"]),
             }
+        speaking_test = repository.get_speaking_test(practice_id)
+        if speaking_test:
+            section = speaking_test["sections"][0]
+            return {
+                **speaking_test,
+                **{key: value for key, value in section.items() if key not in {"id", "position"}},
+                "activeSection": section["name"],
+                "questionCount": len(section["questions"]),
+            }
         test = repository.get_test(practice_id)
-        if not test or test["testType"] != "practice":
+        if not test or test["testType"] != "practice" or test["skill"] == "S":
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Practice set not found")
         section = test["sections"][0]
         return {
@@ -1051,11 +1127,14 @@ def create_practice_session(
         session = repository.create_reading_attempt(user["id"], practice_id)
     elif repository.writing_test_key(practice_id) is not None:
         session = repository.create_writing_attempt(user["id"], practice_id)
+    elif repository.speaking_practise_set(practice_id) is not None:
+        session = repository.draft_speaking_attempt(practice_id)
     else:
         session = repository.create_attempt(user["id"], practice_id)
     session["mode"] = payload.mode
     session["practiceId"] = practice_id
-    delete_user_cache(user["id"])
+    if session["status"] != "draft":
+        delete_user_cache(user["id"])
     return {"session": session, "practice": detail}
 
 
@@ -1074,9 +1153,104 @@ def update_practice_session(
     if not session:
         session = repository.update_writing_attempt(user["id"], session_id, values)
     if not session:
+        session = repository.update_speaking_attempt(user["id"], session_id, values)
+    if not session:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
     delete_user_cache(user["id"])
     return session
+
+
+@router.post("/practice/sessions/{session_id}/submit-speaking")
+async def submit_speaking_session(
+    session_id: str,
+    request: Request,
+    user: dict[str, Any] = Depends(require_supabase_user),
+) -> dict[str, Any]:
+    attempt = repository.get_speaking_attempt(user["id"], session_id)
+    practise_set = attempt["practise_set"] if attempt else repository.speaking_practise_set(session_id)
+    if practise_set is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+    practice_id = repository.speaking_practice_id(practise_set)
+    test = repository.get_speaking_test(practice_id, include_answers=True)
+    if not test:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Practice set not found")
+
+    try:
+        form = await request.form()
+        answers = json.loads(str(form.get("answers") or "{}"))
+        duration_seconds_raw = form.get("durationSeconds")
+        duration_seconds = int(str(duration_seconds_raw)) if duration_seconds_raw else None
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid speaking submission") from exc
+
+    questions = test["sections"][0]["questions"] if test["sections"] else []
+    missing_answers: list[str] = []
+    audio_paths: dict[str, str] = {}
+
+    for question in questions:
+        question_id = question["id"]
+        if question.get("options"):
+            if not answers.get(question_id):
+                missing_answers.append(question.get("label") or str(question.get("number") or question_id))
+            continue
+
+        upload = form.get(f"audio_{question_id}")
+        if not upload or not hasattr(upload, "read"):
+            missing_answers.append(question.get("label") or str(question.get("number") or question_id))
+            continue
+
+        label = str(question.get("label") or question_id.removeprefix("q"))
+        object_path = (
+            f"{user['id']}/{practise_set}/"
+            f"audio-{practise_set}-{label}.webm"
+        )
+        content = await upload.read()
+        if not content:
+            missing_answers.append(label)
+            continue
+        audio_paths[question_id] = upload_speaking_audio(
+            object_path,
+            content,
+            getattr(upload, "content_type", None) or "audio/webm",
+        )
+
+    if missing_answers:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Please answer every question before submitting: {', '.join(missing_answers)}",
+        )
+
+    result = repository.build_speaking_result(
+        practice_id,
+        test["title"],
+        questions,
+        answers,
+        audio_paths,
+        duration_seconds,
+    )
+    if attempt:
+        session = repository.submit_speaking_attempt(
+            user["id"],
+            session_id,
+            answers,
+            audio_paths,
+            duration_seconds,
+            result,
+        )
+    else:
+        session = repository.submit_new_speaking_attempt(
+            user["id"],
+            practise_set,
+            answers,
+            audio_paths,
+            duration_seconds,
+            result,
+        )
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    delete_user_cache(user["id"])
+    return {"session": session, "result": result}
 
 
 @router.post("/practice/sessions/{session_id}/submit")
@@ -1231,6 +1405,9 @@ def get_practice_result(
         writing_result = repository.latest_writing_result(user["id"], practice_id)
         if writing_result:
             return writing_result
+        speaking_result = repository.latest_speaking_result(user["id"], practice_id)
+        if speaking_result:
+            return speaking_result
         result = repository.latest_result(user["id"], practice_id)
         if not result:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Result not found")

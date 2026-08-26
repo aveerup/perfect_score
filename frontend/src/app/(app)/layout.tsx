@@ -188,11 +188,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                       )}
                     </button>
                     {planMenuOpen && (
-                      <div className="absolute left-full top-0 z-50 ml-3 w-60 border border-slate-200 bg-white p-2 shadow-2xl">
+                      <div className="absolute left-full top-0 z-50 ml-3 w-60 border border-slate-200 bg-white p-2 shadow-2xl lg:static lg:ml-9 lg:mt-2 lg:w-auto lg:border-0 lg:border-l lg:border-slate-200 lg:bg-transparent lg:p-0 lg:pl-4 lg:shadow-none">
                         <Link
                           href="/plan"
                           onClick={() => setPlanMenuOpen(false)}
-                          className={`mb-1 block px-3 py-2 text-xs font-black uppercase tracking-[0.16em] transition-colors ${
+                          className={`mb-1 block px-3 py-2 text-xs font-black uppercase tracking-[0.16em] transition-colors lg:rounded-xl ${
                             pathname === "/plan"
                               ? "bg-primary text-white"
                               : "text-slate-400 hover:bg-slate-50 hover:text-slate-950"
@@ -205,7 +205,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                             key={plan.href}
                             href={plan.href}
                             onClick={() => setPlanMenuOpen(false)}
-                            className={`block px-3 py-2.5 text-sm font-black transition-colors ${
+                            className={`block px-3 py-2.5 text-sm font-black transition-colors lg:rounded-xl ${
                               pathname === plan.href
                                 ? "bg-primary text-white"
                                 : "text-slate-500 hover:bg-slate-100 hover:text-slate-950"

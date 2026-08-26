@@ -169,9 +169,18 @@ export interface AuthProfile {
 export interface TestQuestion {
   id: string;
   number: number;
+  label?: string;
   prompt: string;
   type: string;
   options?: string[];
+  superCategory?: string;
+  title?: string;
+  theme?: string;
+  rules?: string[];
+  parentId?: string;
+  parentNumber?: number;
+  modelAnswer?: string;
+  answer?: string;
   targetWords?: number;
   taskType?: "task1" | "task2";
   visualType?: string;
@@ -219,9 +228,10 @@ export interface PracticeResult {
   practiceId: string;
   title: string;
   skill: Skill;
-  score: number;
-  scoringMode: "basic";
-  criteria: { name: string; score: number }[];
+  score: number | null;
+  scoringMode: "basic" | "saved" | "partial" | "admin";
+  rawScore?: { answered: number; total: number };
+  criteria: { name: string; score: number | null }[];
   heatmap: number[];
   feedback: string[];
 }

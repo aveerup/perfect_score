@@ -31,6 +31,7 @@ export function TestRunner({ kind, testId }: TestRunnerProps) {
   const [sectionIndex, setSectionIndex] = useState(0);
   const [questionIndex, setQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [recordings, setRecordings] = useState<Record<string, Blob>>({});
   const [essayText, setEssayText] = useState("");
   const [isReadingPassageBlurred, setIsReadingPassageBlurred] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -70,12 +71,28 @@ export function TestRunner({ kind, testId }: TestRunnerProps) {
       sectionIndex === test.sections.length - 1 &&
       questionIndex === section.questions.length - 1,
   );
+  const isSpeakingTest = section?.skill === "S";
+  const questionLabels = useMemo(
+    () => section?.questions.map((item) => item.label ?? String(item.number)) ?? [],
+    [section],
+  );
+  const answeredQuestions = useMemo(
+    () =>
+      section?.questions.map((item) =>
+        item.options?.length ? Boolean(answers[item.id]) : Boolean(recordings[item.id]),
+      ) ?? [],
+    [answers, recordings, section],
+  );
 
   const saveAnswer = (questionId: string, value: string) => {
     if (section?.skill === "R") {
       setIsReadingPassageBlurred(true);
     }
     setAnswers((current) => ({ ...current, [questionId]: value }));
+  };
+
+  const saveRecording = (questionId: string, recording: Blob) => {
+    setRecordings((current) => ({ ...current, [questionId]: recording }));
   };
 
   const handleQuestionInteract = () => {
@@ -86,14 +103,42 @@ export function TestRunner({ kind, testId }: TestRunnerProps) {
 
   const submit = async () => {
     if (!attempt || submitting) return;
+    if (isSpeakingTest && section) {
+      const missing = section.questions.filter((item) =>
+        item.options?.length ? !answers[item.id] : !recordings[item.id],
+      );
+      if (missing.length) {
+        setError(
+          `Please answer every question before submitting: ${missing
+            .map((item) => item.label ?? item.number)
+            .join(", ")}`,
+        );
+        return;
+      }
+    }
     setSubmitting(true);
     setError("");
     try {
-      await api.post(`/${kind}/sessions/${attempt.id}/submit`, {
-        answers,
-        essayText: essayText || undefined,
-        durationSeconds: Math.round((Date.now() - startedAt.current) / 1000),
-      });
+      const durationSeconds = Math.round((Date.now() - startedAt.current) / 1000);
+      if (isSpeakingTest && section) {
+        const form = new FormData();
+        const speakingAnswers = { ...answers };
+        for (const item of section.questions) {
+          if (!item.options?.length) speakingAnswers[item.id] = "recorded";
+        }
+        form.append("answers", JSON.stringify(speakingAnswers));
+        form.append("durationSeconds", String(durationSeconds));
+        for (const [questionId, blob] of Object.entries(recordings)) {
+          form.append(`audio_${questionId}`, blob, `${questionId}.webm`);
+        }
+        await api.postForm(`/practice/sessions/${attempt.id}/submit-speaking`, form);
+      } else {
+        await api.post(`/${kind}/sessions/${attempt.id}/submit`, {
+          answers,
+          essayText: essayText || undefined,
+          durationSeconds,
+        });
+      }
       router.push(`/${kind}/${testId}/results`);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Unable to submit test");
@@ -180,7 +225,15 @@ export function TestRunner({ kind, testId }: TestRunnerProps) {
       />
     );
   } else if (section.skill === "S") {
-    content = <SpeakingPlayer part={2} question={question.prompt} />;
+    content = (
+      <SpeakingPlayer
+        question={question}
+        value={answers[question.id] ?? ""}
+        recording={recordings[question.id]}
+        onMcqChange={saveAnswer}
+        onRecordingChange={saveRecording}
+      />
+    );
   }
 
   return (
@@ -200,6 +253,9 @@ export function TestRunner({ kind, testId }: TestRunnerProps) {
         totalQuestions={section.questions.length}
         currentQuestion={questionIndex + 1}
         onQuestionSelect={(number) => setQuestionIndex(number - 1)}
+        questionLabels={questionLabels}
+        answeredQuestions={answeredQuestions}
+        largeQuestionNav={isSpeakingTest}
       >
         {content}
       </TestLayout>

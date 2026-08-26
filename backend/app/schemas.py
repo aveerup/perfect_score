@@ -25,6 +25,16 @@ class AdminCreateUserRequest(BaseModel):
     transactionId: str | None = None
 
 
+class SpeakingAudioMarks(BaseModel):
+    followsModelAnswer: bool = False
+    goodPronunciation: bool = False
+    speakingFluidity: bool = False
+
+
+class SpeakingEvaluationRequest(BaseModel):
+    audioMarks: dict[str, SpeakingAudioMarks] = Field(default_factory=dict)
+
+
 class JoinRequest(BaseModel):
     email: str
     transactionId: str = Field(min_length=3, max_length=120)

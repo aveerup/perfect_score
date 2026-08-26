@@ -14,11 +14,12 @@ const apiDataCache = new Map<string, CacheEntry>();
 const pendingRequests = new Map<string, Promise<unknown>>();
 
 async function request<T>(path: string, init?: RequestInit, retry = true): Promise<T> {
+  const isFormData = typeof FormData !== "undefined" && init?.body instanceof FormData;
   const response = await fetch(`${API_URL}${path}`, {
     ...init,
     credentials: "include",
     headers: {
-      ...(init?.body ? { "Content-Type": "application/json" } : {}),
+      ...(init?.body && !isFormData ? { "Content-Type": "application/json" } : {}),
       ...init?.headers,
     },
   });
@@ -46,6 +47,11 @@ export const api = {
     request<T>(path, {
       method: "POST",
       body: body === undefined ? undefined : JSON.stringify(body),
+    }),
+  postForm: <T>(path: string, body: FormData) =>
+    request<T>(path, {
+      method: "POST",
+      body,
     }),
   patch: <T>(path: string, body?: unknown) =>
     request<T>(path, {

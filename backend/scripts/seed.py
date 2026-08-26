@@ -842,7 +842,7 @@ def seed_tests(cursor: Any) -> tuple[int, int]:
         """
         update public.tests
         set is_published = false
-        where test_type = 'practice' and skill in ('R', 'W')
+        where test_type = 'practice' and skill in ('R', 'W', 'S')
         """
     )
     practice_items = [item for item in PRACTICE_QUESTIONS if item["skill"] not in {"L", "R", "W"}]

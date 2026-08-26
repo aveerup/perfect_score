@@ -15,28 +15,44 @@ export default function PracticeResultsPage() {
   if (loading) return <div className="py-20 text-center text-slate-400">Loading result...</div>;
   if (error || !data) return <div className="py-20 text-center text-red-500">{error || "Result not found"}</div>;
 
+  const hasScore = typeof data.score === "number";
+  const hasCriteria = data.criteria.some((criterion) => typeof criterion.score === "number");
+
   return (
     <div className="max-w-4xl mx-auto py-12 space-y-10">
       <header className="border-b border-slate-200 pb-8">
-        <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Basic scoring result</p>
+        <p className="text-xs font-bold uppercase tracking-widest text-slate-400">
+          {hasScore ? "Basic scoring result" : "Submission saved"}
+        </p>
         <h1 className="text-3xl font-black mt-2">{data.title}</h1>
       </header>
 
       <section className="bg-white border border-slate-100 rounded-[2rem] p-10 text-center">
-        <p className="text-sm font-bold uppercase tracking-widest text-slate-400">Estimated band</p>
-        <p className="text-8xl font-black mt-3">{data.score.toFixed(1)}</p>
+        <p className="text-sm font-bold uppercase tracking-widest text-slate-400">
+          {hasScore ? "Estimated band" : "Speaking attempt"}
+        </p>
+        <p className={hasScore ? "text-8xl font-black mt-3" : "text-5xl font-black mt-4"}>
+          {hasScore ? data.score!.toFixed(1) : "Pending review"}
+        </p>
+        {!hasScore && data.rawScore && (
+          <p className="mt-4 text-sm font-bold text-slate-500">
+            {data.rawScore.answered} of {data.rawScore.total} answers submitted
+          </p>
+        )}
       </section>
 
-      <section className="grid sm:grid-cols-2 gap-4">
-        {data.criteria.map((criterion) => (
-          <div key={criterion.name} className="bg-white border border-slate-100 rounded-2xl p-6">
-            <div className="flex justify-between font-bold">
-              <span>{criterion.name}</span>
-              <span>{criterion.score.toFixed(1)}</span>
+      {hasCriteria && (
+        <section className="grid sm:grid-cols-2 gap-4">
+          {data.criteria.map((criterion) => (
+            <div key={criterion.name} className="bg-white border border-slate-100 rounded-2xl p-6">
+              <div className="flex justify-between font-bold">
+                <span>{criterion.name}</span>
+                <span>{typeof criterion.score === "number" ? criterion.score.toFixed(1) : "Pending"}</span>
+              </div>
             </div>
-          </div>
-        ))}
-      </section>
+          ))}
+        </section>
+      )}
 
       <section className="bg-amber-50 border border-amber-100 rounded-2xl p-6 space-y-2">
         {data.feedback.map((item) => <p key={item} className="text-sm text-amber-900">{item}</p>)}

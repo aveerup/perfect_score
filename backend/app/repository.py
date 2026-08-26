@@ -16,6 +16,7 @@ from .db import db_connection, fetch_all, fetch_one, jsonb
 LISTENING_ID_PREFIX = "listening-"
 READING_ID_PREFIX = "reading-"
 WRITING_ID_PREFIX = "writing-"
+SPEAKING_ID_PREFIX = "speaking-"
 
 
 def slugify(value: str) -> str:
@@ -289,6 +290,239 @@ def approve_transaction_for_email(transaction_id: str, email: str) -> dict[str, 
     return _transaction_row(row) if row else None
 
 
+def _speaking_question_score(
+    question: dict[str, Any],
+    submitted_answers: dict[str, Any],
+    audio_paths: dict[str, str],
+    audio_marks: dict[str, dict[str, bool]] | None = None,
+) -> dict[str, Any]:
+    question_id = question["id"]
+    label = question.get("label") or str(question.get("number") or question_id)
+    submitted_answer = submitted_answers.get(question_id)
+    if question.get("options"):
+        correct_answer = question.get("answer")
+        is_correct = _answer_matches(submitted_answer, correct_answer)
+        return {
+            "type": "mcq",
+            "label": label,
+            "submittedAnswer": submitted_answer,
+            "correctAnswer": correct_answer,
+            "isCorrect": is_correct,
+            "score": 1 if is_correct else 0,
+            "maxScore": 1,
+        }
+
+    marks = audio_marks.get(question_id, {}) if audio_marks else {}
+    follows_model = bool(marks.get("followsModelAnswer"))
+    good_pronunciation = bool(marks.get("goodPronunciation"))
+    speaking_fluidity = bool(marks.get("speakingFluidity"))
+    score = (2 if follows_model else 0) + (1 if good_pronunciation else 0) + (1 if speaking_fluidity else 0)
+    return {
+        "type": "audio",
+        "label": label,
+        "audioPath": audio_paths.get(question_id),
+        "modelAnswer": question.get("modelAnswer"),
+        "marks": {
+            "followsModelAnswer": follows_model,
+            "goodPronunciation": good_pronunciation,
+            "speakingFluidity": speaking_fluidity,
+        },
+        "score": score,
+        "maxScore": 4,
+    }
+
+
+def build_speaking_result(
+    practice_id: str,
+    title: str,
+    questions: list[dict[str, Any]],
+    answers: dict[str, Any],
+    audio_paths: dict[str, str],
+    duration_seconds: int | None,
+    audio_marks: dict[str, dict[str, bool]] | None = None,
+    evaluated_by: str | None = None,
+) -> dict[str, Any]:
+    question_scores = {
+        question["id"]: _speaking_question_score(question, answers, audio_paths, audio_marks)
+        for question in questions
+    }
+    mcq_scores = [score for score in question_scores.values() if score["type"] == "mcq"]
+    audio_scores = [score for score in question_scores.values() if score["type"] == "audio"]
+    mcq_earned = sum(score["score"] for score in mcq_scores)
+    mcq_total = sum(score["maxScore"] for score in mcq_scores)
+    audio_total = sum(score["maxScore"] for score in audio_scores)
+    is_evaluated = audio_marks is not None
+    audio_earned = sum(score["score"] for score in audio_scores) if is_evaluated else None
+    earned = mcq_earned + (audio_earned or 0)
+    total = mcq_total + audio_total
+    evaluation = {
+        "status": "evaluated" if is_evaluated else "pending_audio_review",
+        "evaluatedBy": evaluated_by,
+        "evaluatedAt": date.today().isoformat() if is_evaluated else None,
+        "questionScores": question_scores,
+    }
+    return {
+        "practiceId": practice_id,
+        "title": title,
+        "skill": "S",
+        "score": earned if is_evaluated else None,
+        "scoringMode": "admin" if is_evaluated else "partial",
+        "rawScore": {
+            "mcqEarned": mcq_earned,
+            "mcqTotal": mcq_total,
+            "audioEarned": audio_earned,
+            "audioTotal": audio_total,
+            "earned": earned,
+            "total": total,
+        },
+        "criteria": [],
+        "heatmap": [100 if score["score"] else 0 for score in question_scores.values()],
+        "feedback": [
+            "Speaking attempt evaluated by admin."
+            if is_evaluated
+            else "Your speaking responses were saved for review.",
+            "Audio answers are pending admin evaluation."
+            if not is_evaluated
+            else f"Final score: {earned}/{total}.",
+        ],
+        "audioPaths": audio_paths,
+        "durationSeconds": duration_seconds,
+        "evaluation": evaluation,
+    }
+
+
+def list_admin_speaking_attempts() -> list[dict[str, Any]]:
+    rows = fetch_all(
+        """
+        select
+          sta.id,
+          sta.user_id,
+          sta.practise_set,
+          sta.submitted_at,
+          sta.overall_score,
+          sta.result,
+          st.title,
+          p.email,
+          p.full_name
+        from public.speaking_test_attempts sta
+        join public.speaking_tests st on st.practise_set = sta.practise_set
+        left join public.profiles p on p.id = sta.user_id
+        where sta.status = 'submitted'
+        order by sta.submitted_at desc nulls last, sta.started_at desc
+        """
+    )
+    output: list[dict[str, Any]] = []
+    for row in rows:
+        result = row["result"] or {}
+        raw_score = result.get("rawScore") if isinstance(result, dict) else None
+        evaluation = result.get("evaluation") if isinstance(result, dict) else None
+        output.append(
+            {
+                "id": str(row["id"]),
+                "userId": str(row["user_id"]),
+                "userEmail": row["email"] or "",
+                "userName": row["full_name"] or row["email"] or "Unknown user",
+                "practiseSet": row["practise_set"],
+                "title": row["title"] or f"Speaking Practice Set {row['practise_set']}",
+                "submittedAt": _iso(row["submitted_at"]),
+                "score": float(row["overall_score"]) if row["overall_score"] is not None else None,
+                "rawScore": raw_score,
+                "evaluationStatus": (
+                    evaluation.get("status")
+                    if isinstance(evaluation, dict) and evaluation.get("status")
+                    else "pending_audio_review"
+                ),
+            }
+        )
+    return output
+
+
+def get_admin_speaking_attempt(attempt_id: str) -> dict[str, Any] | None:
+    row = fetch_one(
+        """
+        select
+          sta.*,
+          st.title,
+          st.questions,
+          st.answers as answer_key,
+          st.time_limit_seconds,
+          p.email,
+          p.full_name
+        from public.speaking_test_attempts sta
+        join public.speaking_tests st on st.practise_set = sta.practise_set
+        left join public.profiles p on p.id = sta.user_id
+        where sta.id = %s and sta.status = 'submitted'
+        """,
+        (attempt_id,),
+    )
+    if not row:
+        return None
+    title, instructions, questions = _normalize_speaking_payload(
+        row["questions"], row["answer_key"], include_answers=True
+    )
+    audio_paths = row["audio_paths"] or {}
+    result = row["result"] or {}
+    evaluation = result.get("evaluation") if isinstance(result, dict) else None
+    question_scores = evaluation.get("questionScores", {}) if isinstance(evaluation, dict) else {}
+    return {
+        "id": str(row["id"]),
+        "userId": str(row["user_id"]),
+        "userEmail": row["email"] or "",
+        "userName": row["full_name"] or row["email"] or "Unknown user",
+        "practiseSet": row["practise_set"],
+        "practiceId": speaking_practice_id(row["practise_set"]),
+        "title": title or row["title"] or f"Speaking Practice Set {row['practise_set']}",
+        "instructions": instructions,
+        "submittedAt": _iso(row["submitted_at"]),
+        "answers": row["answers"] or {},
+        "audioPaths": audio_paths,
+        "result": result,
+        "questions": [
+            {
+                **question,
+                "submittedAnswer": (row["answers"] or {}).get(question["id"]),
+                "audioPath": audio_paths.get(question["id"]),
+                "audioUrl": _speaking_audio_url(audio_paths.get(question["id"])),
+                "evaluation": question_scores.get(question["id"]),
+            }
+            for question in questions
+        ],
+    }
+
+
+def save_admin_speaking_evaluation(
+    attempt_id: str,
+    admin_id: str,
+    audio_marks: dict[str, dict[str, bool]],
+) -> dict[str, Any] | None:
+    detail = get_admin_speaking_attempt(attempt_id)
+    if not detail:
+        return None
+    result = build_speaking_result(
+        detail["practiceId"],
+        detail["title"],
+        detail["questions"],
+        detail["answers"],
+        detail["audioPaths"],
+        (detail.get("result") or {}).get("durationSeconds"),
+        audio_marks=audio_marks,
+        evaluated_by=admin_id,
+    )
+    row = fetch_one(
+        """
+        update public.speaking_test_attempts
+        set result = %s,
+            overall_score = %s
+        where id = %s and status = 'submitted'
+        returning id
+        """,
+        (jsonb(result), result["rawScore"]["earned"], attempt_id),
+    )
+    if not row:
+        return None
+    return get_admin_speaking_attempt(attempt_id)
+
+
 def list_lectures(user_id: str, skill: str | None = None) -> list[dict[str, Any]]:
     params: list[Any] = [user_id]
     skill_filter = ""
@@ -424,6 +658,19 @@ def writing_test_key(practice_id: str) -> tuple[str, int] | None:
         return None
 
 
+def speaking_practice_id(practise_set: int) -> str:
+    return f"{SPEAKING_ID_PREFIX}{practise_set}"
+
+
+def speaking_practise_set(practice_id: str) -> int | None:
+    if not practice_id.startswith(SPEAKING_ID_PREFIX):
+        return None
+    try:
+        return int(practice_id.removeprefix(SPEAKING_ID_PREFIX))
+    except ValueError:
+        return None
+
+
 def _listening_audio_url(audio_path: str | None) -> str | None:
     if not audio_path:
         return None
@@ -470,6 +717,68 @@ def _listening_audio_url(audio_path: str | None) -> str | None:
     if signed_url.startswith(("http://", "https://")):
         return signed_url
     return f"{base_url}/storage/v1{signed_url}"
+
+
+def _storage_signed_url(
+    bucket_env: str,
+    default_bucket: str,
+    object_path: str | None,
+    expiry_env: str,
+) -> str | None:
+    if not object_path:
+        return None
+    if object_path.startswith(("http://", "https://")):
+        return object_path
+    base_url = (os.getenv("SUPABASE_URL") or "").rstrip("/")
+    bucket = os.getenv(bucket_env, default_bucket).strip("/")
+    path = object_path.lstrip("/")
+    if path.startswith(f"{bucket}/"):
+        path = path[len(bucket) + 1 :]
+    signing_key = (
+        os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        or os.getenv("SUPABASE_SECRET_KEY")
+        or os.getenv("SUPABASE_PUBLISHABLE_KEY")
+        or os.getenv("SUPABASE_ANON_KEY")
+    )
+    if not base_url or not signing_key:
+        return None
+
+    expires_in = int(os.getenv(expiry_env, "3600"))
+    endpoint = (
+        f"{base_url}/storage/v1/object/sign/"
+        f"{quote(bucket, safe='')}/{quote(path, safe='/')}"
+    )
+    request = Request(
+        endpoint,
+        data=json.dumps({"expiresIn": expires_in}).encode("utf-8"),
+        headers={
+            "apikey": signing_key,
+            "Authorization": f"Bearer {signing_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=10) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (HTTPError, URLError, TimeoutError, ValueError):
+        return None
+
+    signed_url = payload.get("signedURL") or payload.get("signedUrl")
+    if not signed_url:
+        return None
+    if signed_url.startswith(("http://", "https://")):
+        return signed_url
+    return f"{base_url}/storage/v1{signed_url}"
+
+
+def _speaking_audio_url(audio_path: str | None) -> str | None:
+    return _storage_signed_url(
+        "SPEAKING_AUDIO_BUCKET",
+        "speaking_tests_audio",
+        audio_path,
+        "SPEAKING_AUDIO_SIGNED_URL_SECONDS",
+    )
 
 
 def _answer_for_question(answer_key: Any, question_id: str, number: int) -> Any:
@@ -754,6 +1063,107 @@ def _writing_row_to_test(row: dict[str, Any], include_answers: bool = False) -> 
     }
 
 
+def _normalize_speaking_payload(
+    raw_questions: Any,
+    answer_key: Any | None = None,
+    include_answers: bool = True,
+) -> tuple[str | None, str | None, list[dict[str, Any]]]:
+    payload = raw_questions if isinstance(raw_questions, dict) else {}
+    raw_items = payload.get("questions") if isinstance(payload.get("questions"), list) else []
+    answer_map = answer_key if isinstance(answer_key, dict) else {}
+    title = payload.get("title")
+    instructions = payload.get("instructions")
+
+    normalized: list[dict[str, Any]] = []
+    position = 1
+    for index, raw_question in enumerate(raw_items, start=1):
+        if not isinstance(raw_question, dict):
+            continue
+
+        parent_number = int(raw_question.get("number") or index)
+        parent_id = str(raw_question.get("id") or f"q{parent_number}")
+        shared = {
+            "superCategory": raw_question.get("superCategory"),
+            "title": raw_question.get("title"),
+            "theme": raw_question.get("theme"),
+            "rules": raw_question.get("rules") or [],
+            "parentId": parent_id,
+            "parentNumber": parent_number,
+        }
+        subquestions = raw_question.get("subquestions")
+        if isinstance(subquestions, list) and subquestions:
+            for sub_index, raw_subquestion in enumerate(subquestions, start=1):
+                if not isinstance(raw_subquestion, dict):
+                    continue
+                question_id = str(raw_subquestion.get("id") or f"{parent_id}{sub_index}")
+                label = str(raw_subquestion.get("label") or question_id.removeprefix("q"))
+                output = {
+                    "id": question_id,
+                    "number": position,
+                    "label": label,
+                    "prompt": raw_subquestion.get("prompt")
+                    or raw_subquestion.get("text")
+                    or raw_subquestion.get("question")
+                    or "",
+                    "type": raw_subquestion.get("type") or "Speaking",
+                    **shared,
+                }
+                if include_answers and question_id in answer_map:
+                    output["modelAnswer"] = answer_map[question_id]
+                normalized.append(output)
+                position += 1
+            continue
+
+        question_id = parent_id
+        output = {
+            "id": question_id,
+            "number": position,
+            "label": str(raw_question.get("label") or parent_number),
+            "prompt": raw_question.get("prompt")
+            or raw_question.get("text")
+            or raw_question.get("question")
+            or "",
+            "type": raw_question.get("type") or raw_question.get("question_type") or "Speaking",
+            "options": raw_question.get("options"),
+            **shared,
+        }
+        if include_answers and question_id in answer_map:
+            output["answer"] = answer_map[question_id]
+        normalized.append(output)
+        position += 1
+
+    return str(title) if title else None, str(instructions) if instructions else None, normalized
+
+
+def _speaking_row_to_test(row: dict[str, Any], include_answers: bool = True) -> dict[str, Any]:
+    title, instructions, questions = _normalize_speaking_payload(
+        row["questions"], row.get("answers"), include_answers=include_answers
+    )
+    test_id = speaking_practice_id(row["practise_set"])
+    return {
+        "id": test_id,
+        "title": title or row["title"] or f"Speaking Practice Set {row['practise_set']}",
+        "testType": "practice",
+        "skill": "S",
+        "subType": "IELTS Speaking",
+        "difficulty": row.get("category") or "Medium",
+        "bandRange": "4.0-6.0",
+        "timeLimitSeconds": row["time_limit_seconds"],
+        "sections": [
+            {
+                "id": test_id,
+                "name": "Speaking",
+                "skill": "S",
+                "position": 1,
+                "timeLimitSeconds": row["time_limit_seconds"],
+                "instructions": instructions,
+                "questions": questions,
+            }
+        ],
+        "metadata": {"practiseSet": row["practise_set"], "source": "speaking_tests"},
+    }
+
+
 def list_listening_tests(user_id: str) -> list[dict[str, Any]]:
     rows = fetch_all(
         """
@@ -899,6 +1309,55 @@ def list_writing_tests(user_id: str) -> list[dict[str, Any]]:
     return output
 
 
+def list_speaking_tests(user_id: str) -> list[dict[str, Any]]:
+    rows = fetch_all(
+        """
+        select st.*,
+          a.status as attempt_status,
+          a.overall_score,
+          a.submitted_at
+        from public.speaking_tests st
+        left join lateral (
+          select status, overall_score, submitted_at
+          from public.speaking_test_attempts
+          where user_id = %s and practise_set = st.practise_set and status = 'submitted'
+          order by started_at desc
+          limit 1
+        ) a on true
+        where st.is_published
+        order by st.practise_set
+        """,
+        (user_id,),
+    )
+    output: list[dict[str, Any]] = []
+    for row in rows:
+        _title, _instructions, questions = _normalize_speaking_payload(row["questions"], row.get("answers"))
+        summary = _attempt_summary(
+            {
+                "status": row["attempt_status"],
+                "overall_score": row["overall_score"],
+                "section_scores": None,
+                "submitted_at": row["submitted_at"],
+            }
+            if row["attempt_status"]
+            else None
+        )
+        output.append(
+            {
+                "id": speaking_practice_id(row["practise_set"]),
+                "title": row["title"] or f"Speaking Practice Set {row['practise_set']}",
+                "skill": "S",
+                "subType": "IELTS Speaking",
+                "difficulty": row.get("category") or "Medium",
+                "bandRange": "4.0-6.0",
+                "attempted": summary["attempted"],
+                "score": str(summary["score"]) if summary["score"] is not None else None,
+                "questionCount": len(questions),
+            }
+        )
+    return output
+
+
 def list_tests(user_id: str, test_type: str) -> list[dict[str, Any]]:
     rows = fetch_all(
         """
@@ -998,6 +1457,19 @@ def get_writing_test(practice_id: str, include_answers: bool = False) -> dict[st
     if not row:
         return None
     return _writing_row_to_test(row, include_answers=include_answers)
+
+
+def get_speaking_test(practice_id: str, include_answers: bool = True) -> dict[str, Any] | None:
+    practise_set = speaking_practise_set(practice_id)
+    if practise_set is None:
+        return None
+    row = fetch_one(
+        "select * from public.speaking_tests where practise_set = %s and is_published",
+        (practise_set,),
+    )
+    if not row:
+        return None
+    return _speaking_row_to_test(row, include_answers=include_answers)
 
 
 def get_test(test_id: str, include_answers: bool = False) -> dict[str, Any] | None:
@@ -1149,6 +1621,43 @@ def create_writing_attempt(user_id: str, practice_id: str) -> dict[str, Any]:
     return writing_attempt_row(row)
 
 
+def create_speaking_attempt(user_id: str, practice_id: str) -> dict[str, Any]:
+    practise_set = speaking_practise_set(practice_id)
+    if practise_set is None:
+        raise LookupError("Speaking test not found")
+    test = get_speaking_test(practice_id)
+    if not test:
+        raise LookupError("Speaking test not found")
+    row = fetch_one(
+        """
+        insert into public.speaking_test_attempts (
+          user_id, practise_set, time_left
+        )
+        values (%s, %s, %s)
+        returning *
+        """,
+        (user_id, practise_set, test["timeLimitSeconds"]),
+    )
+    return speaking_attempt_row(row)
+
+
+def draft_speaking_attempt(practice_id: str) -> dict[str, Any]:
+    test = get_speaking_test(practice_id)
+    if not test:
+        raise LookupError("Speaking test not found")
+    return {
+        "id": practice_id,
+        "testId": practice_id,
+        "status": "draft",
+        "currentQuestion": 1,
+        "timeLeft": test["timeLimitSeconds"],
+        "activeSection": "Speaking",
+        "answers": {},
+        "audioPaths": {},
+        "createdAt": None,
+    }
+
+
 def attempt_row(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": str(row["id"]),
@@ -1217,6 +1726,20 @@ def writing_attempt_row(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def speaking_attempt_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": str(row["id"]),
+        "testId": speaking_practice_id(row["practise_set"]),
+        "status": row["status"],
+        "currentQuestion": row["current_question"],
+        "timeLeft": row["time_left"],
+        "activeSection": "Speaking",
+        "answers": row["answers"] or {},
+        "audioPaths": row["audio_paths"] or {},
+        "createdAt": _iso(row["started_at"]),
+    }
+
+
 def draft_writing_attempt(practice_id: str) -> dict[str, Any]:
     test = get_writing_test(practice_id)
     if not test:
@@ -1257,6 +1780,13 @@ def get_reading_attempt(user_id: str, attempt_id: str) -> dict[str, Any] | None:
 def get_writing_attempt(user_id: str, attempt_id: str) -> dict[str, Any] | None:
     return fetch_one(
         "select * from public.writing_test_attempts where id = %s and user_id = %s",
+        (attempt_id, user_id),
+    )
+
+
+def get_speaking_attempt(user_id: str, attempt_id: str) -> dict[str, Any] | None:
+    return fetch_one(
+        "select * from public.speaking_test_attempts where id = %s and user_id = %s",
         (attempt_id, user_id),
     )
 
@@ -1367,6 +1897,33 @@ def update_writing_attempt(
         ),
     )
     return writing_attempt_row(row)
+
+
+def update_speaking_attempt(
+    user_id: str, attempt_id: str, values: dict[str, Any]
+) -> dict[str, Any] | None:
+    current = get_speaking_attempt(user_id, attempt_id)
+    if not current:
+        return None
+    answers = {**(current["answers"] or {}), **(values.get("answers") or {})}
+    row = fetch_one(
+        """
+        update public.speaking_test_attempts
+        set current_question = %s,
+            time_left = %s,
+            answers = %s
+        where id = %s and user_id = %s
+        returning *
+        """,
+        (
+            values.get("currentQuestion", current["current_question"]),
+            values.get("timeLeft", current["time_left"]),
+            jsonb(answers),
+            attempt_id,
+            user_id,
+        ),
+    )
+    return speaking_attempt_row(row)
 
 
 def _normalize_answer(value: Any) -> str:
@@ -1624,6 +2181,84 @@ def submit_writing_attempt(
     return writing_attempt_row(row)
 
 
+def submit_speaking_attempt(
+    user_id: str,
+    attempt_id: str,
+    answers: dict[str, Any],
+    audio_paths: dict[str, str],
+    duration_seconds: int | None,
+    result: dict[str, Any],
+) -> dict[str, Any] | None:
+    current = get_speaking_attempt(user_id, attempt_id)
+    if not current:
+        return None
+    merged_answers = {**(current["answers"] or {}), **answers}
+    merged_audio_paths = {**(current["audio_paths"] or {}), **audio_paths}
+    row = fetch_one(
+        """
+        update public.speaking_test_attempts
+        set status = 'submitted',
+            answers = %s,
+            audio_paths = %s,
+            duration_seconds = %s,
+            overall_score = %s,
+            result = %s,
+            submitted_at = now()
+        where id = %s and user_id = %s
+        returning *
+        """,
+        (
+            jsonb(merged_answers),
+            jsonb(merged_audio_paths),
+            duration_seconds,
+            None,
+            jsonb(result),
+            attempt_id,
+            user_id,
+        ),
+    )
+    return speaking_attempt_row(row)
+
+
+def submit_new_speaking_attempt(
+    user_id: str,
+    practise_set: int,
+    answers: dict[str, Any],
+    audio_paths: dict[str, str],
+    duration_seconds: int | None,
+    result: dict[str, Any],
+) -> dict[str, Any]:
+    row = fetch_one(
+        """
+        insert into public.speaking_test_attempts (
+          user_id,
+          practise_set,
+          status,
+          time_left,
+          answers,
+          audio_paths,
+          duration_seconds,
+          overall_score,
+          result,
+          submitted_at
+        )
+        values (%s, %s, 'submitted', %s, %s, %s, %s, %s, %s, now())
+        returning *
+        """,
+        (
+            user_id,
+            practise_set,
+            None,
+            jsonb(answers),
+            jsonb(audio_paths),
+            duration_seconds,
+            None,
+            jsonb(result),
+        ),
+    )
+    return speaking_attempt_row(row)
+
+
 def submit_attempt(
     user_id: str,
     attempt_id: str,
@@ -1760,6 +2395,29 @@ def latest_writing_result(user_id: str, practice_id: str) -> dict[str, Any] | No
     return row["result"] or {
         "practiceId": practice_id,
         "score": float(row["overall_score"]),
+        "dateTaken": _iso(row["submitted_at"]),
+    }
+
+
+def latest_speaking_result(user_id: str, practice_id: str) -> dict[str, Any] | None:
+    practise_set = speaking_practise_set(practice_id)
+    if practise_set is None:
+        return None
+    row = fetch_one(
+        """
+        select result, overall_score, submitted_at
+        from public.speaking_test_attempts
+        where user_id = %s and practise_set = %s and status = 'submitted'
+        order by submitted_at desc
+        limit 1
+        """,
+        (user_id, practise_set),
+    )
+    if not row:
+        return None
+    return row["result"] or {
+        "practiceId": practice_id,
+        "score": float(row["overall_score"]) if row["overall_score"] is not None else None,
         "dateTaken": _iso(row["submitted_at"]),
     }
 

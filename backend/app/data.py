@@ -44,19 +44,15 @@ VIDEOS: list[dict[str, Any]] = [
 PRACTICE_QUESTIONS: list[dict[str, Any]] = [
     {"id": "p1", "title": "Academic Reading: The History of Printing", "skill": "R", "subType": "True/False/Not Given", "difficulty": "Medium", "bandRange": "6.5-7.5", "attempted": True, "score": "11/13"},
     {"id": "p2", "title": "Listening Section 1: Customer Inquiry", "skill": "L", "subType": "Form Completion", "difficulty": "Easy", "bandRange": "5.5-6.5", "attempted": True, "score": "10/10"},
-    {"id": "p4", "title": "Speaking Part 3: Future of Education", "skill": "S", "subType": "Discussion Questions", "difficulty": "Medium", "bandRange": "6.0-7.5", "attempted": True, "score": "7.0"},
     {"id": "p5", "title": "Academic Reading: Renewable Energy", "skill": "R", "subType": "Matching Headings", "difficulty": "Hard", "bandRange": "7.5-8.5", "attempted": False},
     {"id": "p6", "title": "Listening Section 4: Academic Lecture", "skill": "L", "subType": "Note Completion", "difficulty": "Hard", "bandRange": "7.5-9.0", "attempted": False},
     {"id": "p7", "title": "General Training Reading: Work Habits", "skill": "R", "subType": "Multiple Choice", "difficulty": "Easy", "bandRange": "5.0-6.0", "attempted": True, "score": "38/40"},
-    {"id": "p9", "title": "Speaking Part 1: Hometown and Hobbies", "skill": "S", "subType": "Introductory Questions", "difficulty": "Easy", "bandRange": "5.5-6.5", "attempted": True, "score": "8.0"},
     {"id": "p10", "title": "Listening Section 2: Local Gallery Tour", "skill": "L", "subType": "Map Labeling", "difficulty": "Medium", "bandRange": "6.0-7.0", "attempted": False},
     {"id": "p11", "title": "Academic Reading: Marine Biology", "skill": "R", "subType": "Summary Completion", "difficulty": "Medium", "bandRange": "6.5-7.5", "attempted": False},
     {"id": "p13", "title": "Listening Section 3: Student Project", "skill": "L", "subType": "Multiple Choice (Multiple)", "difficulty": "Hard", "bandRange": "7.0-8.5", "attempted": False},
-    {"id": "p14", "title": "Speaking Part 2: A Memorable Journey", "skill": "S", "subType": "Cue Card", "difficulty": "Medium", "bandRange": "6.0-7.5", "attempted": False},
     {"id": "p15", "title": "Academic Reading: AI in Healthcare", "skill": "R", "subType": "Matching Information", "difficulty": "Hard", "bandRange": "7.5-9.0", "attempted": False},
     {"id": "p17", "title": "General Training Reading: Health Policy", "skill": "R", "subType": "Sentence Completion", "difficulty": "Medium", "bandRange": "6.0-7.0", "attempted": False},
     {"id": "p18", "title": "Listening Section 4: Architecture History", "skill": "L", "subType": "Flow-chart Completion", "difficulty": "Hard", "bandRange": "7.5-9.0", "attempted": False},
-    {"id": "p19", "title": "Speaking Part 3: Impact of Social Media", "skill": "S", "subType": "Abstract Discussion", "difficulty": "Hard", "bandRange": "7.5-9.0", "attempted": False},
     {"id": "p20", "title": "Academic Reading: Psychology of Play", "skill": "R", "subType": "List Selection", "difficulty": "Medium", "bandRange": "6.5-7.5", "attempted": False},
 ]
 

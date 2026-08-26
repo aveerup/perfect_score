@@ -1,145 +1,207 @@
 "use client";
 
-import React, { useState, useRef } from "react";
-import { Mic, Square, Trash2, Download, CheckCircle2, AlertCircle } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { AlertCircle, CheckCircle2, Mic, Play, RotateCcw, Square } from "lucide-react";
+import { TestQuestion } from "@/lib/types";
 
 interface SpeakingPlayerProps {
-  question: string;
-  part: number;
+  question: TestQuestion;
+  value: string;
+  recording?: Blob;
+  onMcqChange: (questionId: string, value: string) => void;
+  onRecordingChange: (questionId: string, recording: Blob) => void;
 }
 
-export function SpeakingPlayer({ question, part }: SpeakingPlayerProps) {
+export function SpeakingPlayer({
+  question,
+  value,
+  recording,
+  onMcqChange,
+  onRecordingChange,
+}: SpeakingPlayerProps) {
   const [isRecording, setIsRecording] = useState(false);
-  const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [recordingTime, setRecordingTime] = useState(0);
   const mediaRecorder = useRef<MediaRecorder | null>(null);
   const chunks = useRef<Blob[]>([]);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const audioUrl = useMemo(() => (recording ? URL.createObjectURL(recording) : null), [recording]);
+
+  useEffect(() => {
+    return () => {
+      if (audioUrl) URL.revokeObjectURL(audioUrl);
+    };
+  }, [audioUrl]);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+    };
+  }, []);
+
+  const stopRecording = () => {
+    if (!mediaRecorder.current || !isRecording) return;
+    mediaRecorder.current.stop();
+    setIsRecording(false);
+    if (timerRef.current) clearInterval(timerRef.current);
+  };
 
   const startRecording = async () => {
     try {
-      const userStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      
-      const recorder = new MediaRecorder(userStream);
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      const recorder = new MediaRecorder(stream);
       mediaRecorder.current = recorder;
       chunks.current = [];
 
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunks.current.push(e.data);
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) chunks.current.push(event.data);
       };
 
       recorder.onstop = () => {
         const blob = new Blob(chunks.current, { type: "audio/webm" });
-        setAudioUrl(URL.createObjectURL(blob));
-        userStream.getTracks().forEach(track => track.stop());
+        onRecordingChange(question.id, blob);
+        stream.getTracks().forEach((track) => track.stop());
       };
 
       recorder.start();
-      setIsRecording(true);
       setRecordingTime(0);
-      
+      setIsRecording(true);
       timerRef.current = setInterval(() => {
-        setRecordingTime(prev => prev + 1);
+        setRecordingTime((current) => current + 1);
       }, 1000);
-    } catch (err) {
-      console.error("Error accessing microphone:", err);
-      alert("Please allow microphone access to record your speaking part.");
-    }
-  };
-
-  const stopRecording = () => {
-    if (mediaRecorder.current && isRecording) {
-      mediaRecorder.current.stop();
-      setIsRecording(false);
-      if (timerRef.current) clearInterval(timerRef.current);
+    } catch {
+      window.alert("Please allow microphone access to record your speaking answer.");
     }
   };
 
   const formatTime = (time: number) => {
-    const m = Math.floor(time / 60);
-    const s = time % 60;
-    return `${m}:${s.toString().padStart(2, "0")}`;
+    const minutes = Math.floor(time / 60);
+    const seconds = time % 60;
+    return `${minutes}:${seconds.toString().padStart(2, "0")}`;
   };
 
+  const isMcq = Boolean(question.options?.length);
+
   return (
-    <div className="w-full h-full flex items-center justify-center bg-slate-50 p-8">
-      <div className="max-w-2xl w-full flex flex-col gap-12 text-center">
-        <div className="space-y-4">
-           <span className="px-4 py-1.5 rounded-full bg-slate-900 text-white text-[10px] font-black uppercase tracking-[0.3em]">
-             Part {part}: Long Turn
-           </span>
-           <h2 className="text-3xl font-bold tracking-tight text-slate-800 leading-tight">
-             {question}
-           </h2>
-        </div>
-
-        <div className="relative aspect-video max-w-sm mx-auto w-full bg-white rounded-3xl shadow-2xl border border-slate-200 flex flex-col items-center justify-center gap-8 overflow-hidden">
-          {/* Animated Background Pulse */}
-          {isRecording && (
-            <div className="absolute inset-0 z-0">
-               <div className="absolute inset-0 bg-red-500/5 animate-pulse" />
-               <div className="flex items-center justify-center h-full">
-                  <div className="w-48 h-48 rounded-full border border-red-500/10 animate-ping" />
-                  <div className="absolute w-64 h-64 rounded-full border border-red-500/5 animate-ping delay-700" />
-               </div>
-            </div>
+    <div className="h-full overflow-y-auto bg-[#F8FAFC] px-6 py-10 lg:px-10 lg:py-12">
+      <div className="mx-auto grid max-w-7xl gap-8 lg:grid-cols-[minmax(360px,0.92fr)_minmax(500px,1.08fr)] xl:gap-10">
+        <section className="border border-slate-200 bg-white p-7 lg:p-10">
+          <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">
+            Question {question.label ?? question.number}
+          </p>
+          {question.superCategory && (
+            <p className="mt-4 text-xs font-black uppercase tracking-widest text-primary">
+              {question.superCategory}
+            </p>
           )}
+          {question.title && (
+            <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950">
+              {question.title}
+            </h2>
+          )}
+          {question.theme && (
+            <p className="mt-4 text-base font-bold text-slate-500">Theme: {question.theme}</p>
+          )}
+          {question.rules?.length ? (
+            <div className="mt-8 border border-amber-100 bg-amber-50 p-5">
+              <div className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-amber-700">
+                <AlertCircle className="h-4 w-4" />
+                Rules
+              </div>
+              <ul className="mt-4 space-y-3 text-base font-semibold leading-7 text-amber-900">
+                {question.rules.map((rule) => (
+                  <li key={rule}>{rule}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </section>
 
-          <div className="relative z-10 space-y-4">
-             <div className="text-5xl font-mono font-black text-slate-900 tabular-nums tracking-tighter">
-                {formatTime(recordingTime)}
-             </div>
-             <p className={`text-[10px] font-bold uppercase tracking-widest ${isRecording ? "text-red-500 animate-bounce" : "text-slate-400"}`}>
-               {isRecording ? "• Recording in Progress" : "Ready to start"}
-             </p>
-          </div>
+        <section className="border border-slate-200 bg-white p-7 lg:p-10">
+          <p className="text-xs font-black uppercase tracking-widest text-slate-400">
+            {isMcq ? "Choose one answer" : "Record your answer"}
+          </p>
+          <h3 className="mt-4 text-3xl font-black leading-tight text-slate-950 lg:text-4xl">
+            {question.prompt}
+          </h3>
 
-          {!audioUrl || isRecording ? (
-            <button
-              onClick={isRecording ? stopRecording : startRecording}
-              className={`relative z-10 w-24 h-24 rounded-full flex items-center justify-center transition-all shadow-xl active:scale-90 group ${
-                isRecording 
-                  ? "bg-red-500 hover:bg-red-600 text-white" 
-                  : "bg-black hover:bg-slate-800 text-white"
-              }`}
-            >
-               {isRecording ? <Square size={32} fill="currentColor" /> : <Mic size={32} className="group-hover:scale-110 transition-transform" />}
-            </button>
+          {isMcq ? (
+            <div className="mt-9 grid gap-4">
+              {question.options?.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => onMcqChange(question.id, option)}
+                  className={`border-2 p-5 text-left text-base font-black transition-colors ${
+                    value === option
+                      ? "border-primary bg-primary/5 text-primary"
+                      : "border-slate-200 text-slate-700 hover:border-slate-400"
+                  }`}
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
           ) : (
-            <div className="relative z-10 flex flex-col items-center gap-4">
-               <div className="flex gap-4">
-                  <button 
-                    onClick={() => { setAudioUrl(null); setRecordingTime(0); }}
-                    className="w-12 h-12 rounded-full border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-red-50 hover:text-red-500 transition-colors"
+            <div className="mt-9 space-y-7">
+              <div className="border border-slate-100 bg-slate-50 p-7 text-center lg:p-9">
+                <p className="font-mono text-6xl font-black tabular-nums text-slate-950">
+                  {formatTime(recordingTime)}
+                </p>
+                <p className={`mt-3 text-xs font-black uppercase tracking-widest ${isRecording ? "text-red-500" : "text-slate-400"}`}>
+                  {isRecording ? "Recording in progress" : recording ? "Answer recorded" : "Ready"}
+                </p>
+
+                <div className="mt-7 flex items-center justify-center gap-4">
+                  <button
+                    type="button"
+                    onClick={isRecording ? stopRecording : startRecording}
+                    className={`flex h-20 w-20 items-center justify-center rounded-full text-white shadow-lg transition-transform active:scale-95 ${
+                      isRecording ? "bg-red-500 hover:bg-red-600" : "bg-slate-950 hover:bg-slate-800"
+                    }`}
+                    aria-label={isRecording ? "Stop recording" : "Start recording"}
                   >
-                    <Trash2 size={20} />
+                    {isRecording ? <Square className="h-8 w-8" fill="currentColor" /> : <Mic className="h-8 w-8" />}
                   </button>
-                  <a 
-                    href={audioUrl} 
-                    download={`speaking-part-${part}.webm`}
-                    className="h-12 px-8 rounded-full bg-black hover:bg-slate-800 text-white font-bold inline-flex items-center justify-center transition-all shadow-lg active:scale-95"
-                   >
-                        <Download size={18} className="mr-2" />
-                        Download Answer
-                   </a>
-               </div>
-               <div className="flex items-center gap-2 text-[10px] font-bold text-green-600 uppercase tracking-widest">
-                  <CheckCircle2 size={12} />
-                  Answer Captured
-               </div>
+
+                  {recording && !isRecording && (
+                    <button
+                      type="button"
+                      onClick={startRecording}
+                      className="flex h-12 items-center gap-2 border border-slate-200 bg-white px-4 text-xs font-black uppercase tracking-widest text-slate-600 hover:bg-slate-100"
+                    >
+                      <RotateCcw className="h-4 w-4" />
+                      Re-record
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {audioUrl && (
+                <div className="border border-emerald-100 bg-emerald-50 p-5">
+                  <div className="mb-3 flex items-center gap-2 text-xs font-black uppercase tracking-widest text-emerald-700">
+                    <CheckCircle2 className="h-4 w-4" />
+                    Captured
+                  </div>
+                  <audio controls src={audioUrl} className="w-full" />
+                </div>
+              )}
+
+              {recording && question.modelAnswer && (
+                <div className="border border-slate-200 bg-white p-6">
+                  <div className="mb-3 flex items-center gap-2 text-xs font-black uppercase tracking-widest text-slate-500">
+                    <Play className="h-4 w-4" />
+                    Model Answer
+                  </div>
+                  <p className="text-base font-semibold leading-8 text-slate-700">{question.modelAnswer}</p>
+                </div>
+              )}
             </div>
           )}
-        </div>
-
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 flex items-start gap-4 text-left shadow-sm">
-           <AlertCircle className="w-5 h-5 text-slate-400 shrink-0 mt-0.5" />
-           <div className="space-y-1">
-              <p className="text-[10px] font-black text-slate-900 uppercase tracking-widest underline underline-offset-4">Exam Note:</p>
-              <p className="text-xs text-slate-500 leading-relaxed font-medium">
-                In the actual exam, you should speak for 1-2 minutes. Your recording will be processed locally and never leaves your device.
-              </p>
-           </div>
-        </div>
+        </section>
       </div>
     </div>
   );
