@@ -4,7 +4,7 @@ create table if not exists public.speaking_tests (
   category text not null default 'Medium' check (category in ('Easy', 'Medium', 'Hard')),
   questions jsonb not null default '{}'::jsonb,
   answers jsonb not null default '{}'::jsonb,
-  time_limit_seconds integer not null default 900,
+  time_limit_seconds integer not null default 1800,
   is_published boolean not null default true,
   created_at timestamptz not null default now()
 );
@@ -173,7 +173,7 @@ insert into public.speaking_tests (
     "q7d": "Yes, it is quite difficult. (pause) There is too much homework. (pause) But I manage.",
     "q7e": "Yes, I would like to study abroad. (pause) I want to go to the UK. (pause) It has good schools."
   }'::jsonb,
-  900,
+  1800,
   true
 ) on conflict (practise_set) do update set
   title = excluded.title,
