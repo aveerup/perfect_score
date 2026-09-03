@@ -7,9 +7,17 @@ import Link from "next/link";
 
 export default function LecturesHomePage() {
   const [activeFilter, setActiveFilter] = useState<Skill | "All">("All");
+  const [activeTask, setActiveTask] = useState<string>("All");
+  const [activeModule, setActiveModule] = useState<string>("All");
   const { data: videos, loading, error } = useApiData<VideoLecture[]>("/lectures", []);
 
-  const filteredLectures = videos.filter(v => activeFilter === "All" || v.skill === activeFilter);
+  const skillLectures = videos.filter((video) => activeFilter === "All" || video.skill === activeFilter);
+  const taskOptions = Array.from(new Set(skillLectures.map((video) => video.task).filter(Boolean) as string[]));
+  const taskFilteredLectures = skillLectures.filter((video) => activeTask === "All" || video.task === activeTask);
+  const moduleOptions = Array.from(new Set(taskFilteredLectures.map((video) => video.module).filter(Boolean) as string[]));
+  const filteredLectures = taskFilteredLectures.filter((video) => activeModule === "All" || video.module === activeModule);
+  const showTaskFilter = activeFilter === "W" && taskOptions.length > 0;
+  const showModuleFilter = moduleOptions.length > 0;
 
   if (loading) return <div className="py-20 text-center text-secondary">Loading lectures...</div>;
   if (error) return <div className="py-20 text-center text-red-500">{error}</div>;
@@ -30,7 +38,11 @@ export default function LecturesHomePage() {
             return (
               <button
                 key={label}
-                onClick={() => setActiveFilter(filterVal)}
+                onClick={() => {
+                  setActiveFilter(filterVal);
+                  setActiveTask("All");
+                  setActiveModule("All");
+                }}
                 className={`h-full px-1 text-sm font-medium tracking-widest uppercase relative transition-colors ${
                   isActive ? "text-on-surface" : "text-secondary hover:text-on-surface"
                 }`}
@@ -44,6 +56,30 @@ export default function LecturesHomePage() {
           })}
         </div>
       </div>
+
+      {(showTaskFilter || showModuleFilter) && (
+        <div className="grid gap-4 md:grid-cols-2">
+          {showTaskFilter && (
+            <FilterGroup
+              label="Task"
+              options={taskOptions}
+              activeValue={activeTask}
+              onChange={(value) => {
+                setActiveTask(value);
+                setActiveModule("All");
+              }}
+            />
+          )}
+          {showModuleFilter && (
+            <FilterGroup
+              label="Module"
+              options={moduleOptions}
+              activeValue={activeModule}
+              onChange={setActiveModule}
+            />
+          )}
+        </div>
+      )}
 
       {/* LECTURE LIST */}
       <div className="divide-y divide-border border-y border-border">
@@ -62,6 +98,16 @@ export default function LecturesHomePage() {
                   <span className="text-[10px] font-semibold px-2 py-0.5 border border-outline-variant rounded-full text-secondary uppercase tracking-widest">
                     {lecture.skill}
                   </span>
+                  {lecture.task && (
+                    <span className="text-[10px] font-semibold px-2 py-0.5 border border-outline-variant rounded-full text-secondary uppercase tracking-widest">
+                      {lecture.task}
+                    </span>
+                  )}
+                  {lecture.module && (
+                    <span className="text-[10px] font-semibold px-2 py-0.5 border border-outline-variant rounded-full text-secondary uppercase tracking-widest">
+                      {lecture.module}
+                    </span>
+                  )}
                   <span className="text-[10px] font-medium text-outline uppercase tracking-widest">
                     {lecture.duration}
                   </span>
@@ -71,6 +117,43 @@ export default function LecturesHomePage() {
                 Band {lecture.bandRange}
               </span>
             </Link>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function FilterGroup({
+  label,
+  options,
+  activeValue,
+  onChange,
+}: {
+  label: string;
+  options: string[];
+  activeValue: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <p className="text-[10px] font-semibold text-secondary uppercase tracking-widest">{label}</p>
+      <div className="flex flex-wrap gap-2">
+        {["All", ...options].map((option) => {
+          const isActive = activeValue === option;
+          return (
+            <button
+              key={option}
+              type="button"
+              onClick={() => onChange(option)}
+              className={`border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest transition-colors ${
+                isActive
+                  ? "border-primary bg-primary text-white"
+                  : "border-outline-variant text-secondary hover:border-primary hover:text-on-surface"
+              }`}
+            >
+              {option}
+            </button>
           );
         })}
       </div>

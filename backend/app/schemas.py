@@ -95,6 +95,14 @@ class VocabularyReviewRequest(BaseModel):
     result: Literal["again", "hard", "good", "easy", "known"]
 
 
+class VocabQuizSubmitRequest(BaseModel):
+    testNo: int = Field(ge=1)
+    selectedQuestionIds: list[str] = Field(min_length=1, max_length=15)
+    signature: str = Field(min_length=20)
+    answers: dict[str, Any] = Field(default_factory=dict)
+    durationSeconds: int | None = Field(default=None, ge=0)
+
+
 class PlanPartCompletionRequest(BaseModel):
     completed: bool
 

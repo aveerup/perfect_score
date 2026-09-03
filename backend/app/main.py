@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import hashlib
+import hmac
 import json
 import logging
 import os
+import random
+import re
 from pathlib import Path
 from statistics import mean
 from typing import Any
@@ -37,6 +41,7 @@ from .schemas import (
     SpeakingEvaluationRequest,
     SignupRequest,
     TypingAttemptRequest,
+    VocabQuizSubmitRequest,
     VocabularyReviewRequest,
 )
 from . import repository
@@ -51,6 +56,8 @@ SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_KEY = os.getenv("SUPABASE_PUBLISHABLE_KEY") or os.getenv("SUPABASE_ANON_KEY", "")
 SUPABASE_ADMIN_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_SECRET_KEY", "")
 SPEAKING_AUDIO_BUCKET = os.getenv("SPEAKING_AUDIO_BUCKET", "speaking_tests_audio").strip("/")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 AUTH_COOKIE_SECURE = os.getenv("AUTH_COOKIE_SECURE", "false").lower() == "true"
 AUTH_COOKIE_SAMESITE = os.getenv(
     "AUTH_COOKIE_SAMESITE",
@@ -268,6 +275,257 @@ def upload_speaking_audio(object_path: str, content: bytes, content_type: str) -
             detail=supabase_error_message(response),
         )
     return object_path
+
+
+VOCAB_QUESTION_TYPES = [
+    ("meaning", "Meaning", "mcq"),
+    ("definition_to_word", "Definition to word", "mcq"),
+    ("fill_blank", "Fill in the blank", "input"),
+    ("context", "Context", "input"),
+    ("synonym", "Synonym", "mcq"),
+    ("sentence_selection", "Sentence selection", "mcq"),
+]
+
+
+def normalize_vocab_question_type(value: Any) -> str:
+    cleaned = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "definition_word": "definition_to_word",
+        "definition_to_words": "definition_to_word",
+        "definition": "definition_to_word",
+        "blank": "fill_blank",
+        "fill_in_the_blank": "fill_blank",
+        "sentence": "sentence_selection",
+    }
+    return aliases.get(cleaned, cleaned)
+
+
+def extract_json_text(text: str) -> Any:
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.removeprefix("```json").removeprefix("```").strip()
+        cleaned = cleaned.removesuffix("```").strip()
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        object_start = cleaned.find("{")
+        object_end = cleaned.rfind("}")
+        if object_start != -1 and object_end > object_start:
+            return json.loads(cleaned[object_start : object_end + 1])
+
+        array_start = cleaned.find("[")
+        array_end = cleaned.rfind("]")
+        if array_start != -1 and array_end > array_start:
+            return json.loads(cleaned[array_start : array_end + 1])
+        raise
+
+
+def blank_vocab_word(sentence: str, word: str) -> str:
+    pattern = re.compile(rf"\b{re.escape(word)}\b", flags=re.IGNORECASE)
+    blanked = pattern.sub("______", sentence, count=1)
+    if blanked != sentence:
+        return blanked
+    return f"The correct answer is ______."
+
+
+def unique_options(options: list[Any], correct: str, fallbacks: list[str]) -> list[str]:
+    values: list[str] = []
+    for value in [correct, *options, *fallbacks]:
+        text = str(value or "").strip()
+        if text and text.lower() not in {item.lower() for item in values}:
+            values.append(text)
+        if len(values) == 4:
+            break
+    if correct.lower() not in {item.lower() for item in values}:
+        values = [correct, *values[:3]]
+    values = values[:4]
+    random.shuffle(values)
+    return values
+
+
+def generated_question_map(payload: Any) -> dict[tuple[str, str], dict[str, Any]]:
+    if isinstance(payload, list):
+        items = payload
+    elif isinstance(payload, dict):
+        items = payload.get("questions") or payload.get("items")
+    else:
+        items = None
+    if not isinstance(items, list):
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Gemini returned invalid quiz JSON")
+    output: dict[tuple[str, str], dict[str, Any]] = {}
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        word_id = str(item.get("wordId") or item.get("word_id") or "")
+        question_type = normalize_vocab_question_type(item.get("type"))
+        if word_id and question_type:
+            output[(word_id, question_type)] = item
+    return output
+
+
+def gemini_vocab_prompt(words: list[dict[str, Any]]) -> str:
+    compact_words = [
+        {
+            "wordId": word["id"],
+            "word": word["word"],
+            "definition": word["englishMeaning"],
+            "sentence": word["sentence"],
+        }
+        for word in words
+    ]
+    return (
+        "You are generating IELTS vocabulary practice questions.\n\n"
+        "Use ONLY the vocabulary and definitions provided. Do not introduce a different definition. "
+        "Do not invent vocabulary meanings. Every question must have exactly one correct answer. "
+        "All MCQ options must be plausible, but only one option may be correct. "
+        "Return JSON only, matching this schema:\n"
+        '{"questions":[{"wordId":"string","type":"meaning|definition_to_word|fill_blank|context|synonym|sentence_selection",'
+        '"prompt":"string","options":["string","string","string","string"],"correctAnswer":"string"}]}\n\n'
+        "Rules:\n"
+        "- The top-level JSON value must be an object with a questions array.\n"
+        "- Generate exactly 6 questions per word, one for each type.\n"
+        "- meaning: ask what the word means; correctAnswer must be the supplied definition.\n"
+        "- definition_to_word: ask which word matches the supplied definition; correctAnswer must be the supplied word.\n"
+        "- fill_blank: use the supplied sentence with the target word blanked; correctAnswer must be the supplied word.\n"
+        "- context: create a fresh IELTS-style sentence with a blank; correctAnswer must be the supplied word.\n"
+        "- synonym: ask which option is closest in meaning to the supplied word; correctAnswer must be a synonym option.\n"
+        "- sentence_selection: ask which sentence uses the supplied word correctly; correctAnswer must be one option sentence.\n"
+        "- For fill_blank and context, omit options or return an empty options array.\n\n"
+        f"VOCABULARY:\n{json.dumps(compact_words, ensure_ascii=False)}"
+    )
+
+
+def request_gemini_vocab_questions(words: list[dict[str, Any]]) -> Any:
+    if not GEMINI_API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="GEMINI_API_KEY is not configured",
+        )
+    try:
+        response = httpx2.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent",
+            headers={
+                "x-goog-api-key": GEMINI_API_KEY,
+                "Content-Type": "application/json",
+            },
+            json={
+                "contents": [
+                    {
+                        "role": "user",
+                        "parts": [{"text": gemini_vocab_prompt(words)}],
+                    }
+                ],
+                "generationConfig": {
+                    "temperature": 0.2,
+                    "maxOutputTokens": 32768,
+                    "responseMimeType": "application/json",
+                },
+            },
+            timeout=120.0,
+        )
+    except httpx2.RequestError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Gemini API is unavailable",
+        ) from exc
+
+    if response.status_code != status.HTTP_200_OK:
+        raise HTTPException(status_code=response.status_code, detail=supabase_error_message(response))
+    payload = response.json()
+    try:
+        text = payload["candidates"][0]["content"]["parts"][0]["text"]
+        return extract_json_text(text)
+    except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Gemini returned invalid quiz JSON") from exc
+
+
+def build_vocab_quiz_bank(words: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, str]]:
+    generated: dict[tuple[str, str], dict[str, Any]] = {}
+    batch_size = max(1, int(os.getenv("GEMINI_VOCAB_BATCH_SIZE", "5")))
+    for index in range(0, len(words), batch_size):
+        batch = words[index : index + batch_size]
+        generated.update(generated_question_map(request_gemini_vocab_questions(batch)))
+    definitions = [word["englishMeaning"] for word in words]
+    word_values = [word["word"] for word in words]
+    sentences = [word["sentence"] for word in words]
+    questions: list[dict[str, Any]] = []
+    answers: dict[str, str] = {}
+
+    for word in words:
+        for type_key, type_label, answer_type in VOCAB_QUESTION_TYPES:
+            generated_item = generated.get((word["id"], type_key), {})
+            question_id = f"{word['id']}-{type_key}"
+            correct_answer = str(generated_item.get("correctAnswer") or "").strip()
+            prompt = str(generated_item.get("prompt") or "").strip()
+            options = generated_item.get("options") if isinstance(generated_item.get("options"), list) else []
+
+            if type_key == "meaning":
+                correct_answer = word["englishMeaning"]
+                prompt = prompt or f'What does "{word["word"]}" mean?'
+                options = unique_options(options, correct_answer, definitions)
+            elif type_key == "definition_to_word":
+                correct_answer = word["word"]
+                prompt = prompt or f'Which word means "{word["englishMeaning"]}"?'
+                options = unique_options(options, correct_answer, word_values)
+            elif type_key == "fill_blank":
+                correct_answer = word["word"]
+                prompt = blank_vocab_word(word["sentence"], word["word"])
+                options = []
+            elif type_key == "context":
+                correct_answer = word["word"]
+                prompt = prompt or blank_vocab_word(word["sentence"], word["word"])
+                if "______" not in prompt:
+                    prompt = blank_vocab_word(prompt, word["word"])
+                options = []
+            elif type_key == "synonym":
+                prompt = prompt or f'Which word is closest in meaning to "{word["word"]}"?'
+                if not correct_answer:
+                    raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Gemini did not return a synonym answer")
+                options = unique_options(options, correct_answer, [])
+            elif type_key == "sentence_selection":
+                prompt = prompt or f'Which sentence uses "{word["word"]}" correctly?'
+                correct_answer = correct_answer or word["sentence"]
+                options = unique_options(options, correct_answer, sentences)
+
+            if answer_type == "mcq" and len(options) != 4:
+                raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Gemini returned invalid MCQ options")
+
+            question = {
+                "id": question_id,
+                "wordId": word["id"],
+                "word": word["word"],
+                "type": type_key,
+                "typeLabel": type_label,
+                "answerType": answer_type,
+                "prompt": prompt,
+            }
+            if answer_type == "mcq":
+                question["options"] = options
+            questions.append(question)
+            answers[question_id] = correct_answer
+
+    return questions, answers
+
+
+def vocab_quiz_signature(test_no: int, question_ids: list[str]) -> str:
+    secret = SUPABASE_ADMIN_KEY or os.getenv("DATABASE_URL", "")
+    if not secret:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Vocabulary quiz signing is not configured",
+        )
+    payload = json.dumps(
+        {"questionIds": question_ids, "testNo": test_no},
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return hmac.new(secret.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def require_valid_vocab_quiz_signature(test_no: int, question_ids: list[str], signature: str) -> None:
+    expected = vocab_quiz_signature(test_no, question_ids)
+    if not hmac.compare_digest(expected, signature):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid vocabulary quiz attempt")
 
 
 def find_by_id(items: list[dict[str, Any]], item_id: str, label: str) -> dict[str, Any]:
@@ -1580,6 +1838,50 @@ def review_vocabulary(
     )
     delete_user_cache(user["id"])
     return review
+
+
+@router.post("/vocabulary/groups/{group_name}/quiz/start")
+def start_vocabulary_quiz(
+    group_name: str,
+    user: dict[str, Any] = Depends(require_supabase_user),
+) -> dict[str, Any]:
+    group_name = group_name.strip()
+    test = repository.get_vocab_test(group_name)
+    if not test:
+        words = repository.list_vocabulary_for_quiz(group_name)
+        if not words:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vocabulary group not found")
+        questions, answers = build_vocab_quiz_bank(words)
+        test = repository.save_vocab_test(group_name, questions, answers)
+    attempt = repository.create_vocab_test_attempt(user["id"], test)
+    selected_question_ids = [question["id"] for question in attempt["selectedQuestions"]]
+    return {
+        "attempt": attempt,
+        "group": test["group"],
+        "testNo": test["testNo"],
+        "timeLimitSeconds": attempt["timeLimitSeconds"],
+        "selectedQuestionIds": selected_question_ids,
+        "signature": vocab_quiz_signature(test["testNo"], selected_question_ids),
+    }
+
+
+@router.post("/vocabulary/quiz-attempts/submit")
+def submit_vocabulary_quiz(
+    payload: VocabQuizSubmitRequest,
+    user: dict[str, Any] = Depends(require_supabase_user),
+) -> dict[str, Any]:
+    require_valid_vocab_quiz_signature(payload.testNo, payload.selectedQuestionIds, payload.signature)
+    attempt = repository.submit_new_vocab_test_attempt(
+        user["id"],
+        payload.testNo,
+        payload.selectedQuestionIds,
+        payload.answers,
+        payload.durationSeconds,
+    )
+    if not attempt:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vocabulary quiz attempt not found")
+    delete_user_cache(user["id"])
+    return {"attempt": attempt, "result": attempt["result"]}
 
 
 @router.get("/plans")

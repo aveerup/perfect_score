@@ -6,8 +6,14 @@ export interface VideoLecture {
   id: string;
   title: string;
   description?: string;
+  sourcePath?: string;
   vimeoId?: string;
+  videoProvider?: "youtube" | "vimeo";
+  youtubeLink?: string;
+  youtubeId?: string;
   embedUrl?: string;
+  task?: string | null;
+  module?: string | null;
   skill: Skill;
   bandRange: BandRange;
   duration: string;
@@ -41,6 +47,65 @@ export interface VocabularyWord {
 }
 
 export type VocabularyGroup = string;
+
+export type VocabQuizAnswerType = "mcq" | "input";
+
+export interface VocabQuizQuestion {
+  id: string;
+  wordId: string;
+  word: string;
+  type: string;
+  typeLabel: string;
+  answerType: VocabQuizAnswerType;
+  prompt: string;
+  options?: string[];
+}
+
+export interface VocabQuizGradedAnswer {
+  questionId: string;
+  label?: string;
+  type?: string;
+  prompt: string;
+  answer: string;
+  correctAnswer: string;
+  isCorrect: boolean;
+  score: number;
+}
+
+export interface VocabQuizResult {
+  testNo: number;
+  group: string;
+  score: number;
+  rawScore: {
+    correct: number;
+    total: number;
+  };
+  answers: Record<string, string>;
+  gradedAnswers: VocabQuizGradedAnswer[];
+  durationSeconds?: number | null;
+}
+
+export interface VocabQuizAttempt {
+  id: string;
+  testNo: number;
+  status: "draft" | "active" | "submitted";
+  selectedQuestions: VocabQuizQuestion[];
+  answers: Record<string, string>;
+  score: number | null;
+  result: VocabQuizResult | null;
+  timeLimitSeconds: number;
+  createdAt?: string | null;
+  submittedAt?: string | null;
+}
+
+export interface VocabQuizStartResponse {
+  attempt: VocabQuizAttempt;
+  group: string;
+  testNo: number;
+  timeLimitSeconds: number;
+  selectedQuestionIds: string[];
+  signature: string;
+}
 
 export interface MockTest {
   id: string;
@@ -230,7 +295,15 @@ export interface PracticeResult {
   skill: Skill;
   score: number | null;
   scoringMode: "basic" | "saved" | "partial" | "admin";
-  rawScore?: { answered: number; total: number };
+  rawScore?: {
+    answered?: number;
+    mcqEarned?: number;
+    mcqTotal?: number;
+    audioEarned?: number | null;
+    audioTotal?: number;
+    earned?: number;
+    total?: number;
+  };
   criteria: { name: string; score: number | null }[];
   heatmap: number[];
   feedback: string[];

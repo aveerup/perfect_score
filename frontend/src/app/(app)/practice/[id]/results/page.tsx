@@ -17,6 +17,22 @@ export default function PracticeResultsPage() {
 
   const hasScore = typeof data.score === "number";
   const hasCriteria = data.criteria.some((criterion) => typeof criterion.score === "number");
+  const rawScore = data.rawScore;
+  const isSpeaking = data.skill === "S";
+  const scoreDisplay =
+    isSpeaking && rawScore?.earned !== undefined && rawScore?.total !== undefined
+      ? `${rawScore.earned}/${rawScore.total}`
+      : hasScore
+        ? data.score!.toFixed(1)
+        : "Pending review";
+  const rawSummary =
+    rawScore?.answered !== undefined && rawScore?.total !== undefined
+      ? `${rawScore.answered} of ${rawScore.total} answers submitted`
+      : rawScore?.mcqTotal !== undefined && rawScore.audioTotal !== undefined
+        ? `MCQ ${rawScore.mcqEarned ?? 0}/${rawScore.mcqTotal} · Audio ${
+            rawScore.audioEarned ?? "pending"
+          }/${rawScore.audioTotal}`
+        : null;
 
   return (
     <div className="max-w-4xl mx-auto py-12 space-y-10">
@@ -29,14 +45,14 @@ export default function PracticeResultsPage() {
 
       <section className="bg-white border border-slate-100 rounded-[2rem] p-10 text-center">
         <p className="text-sm font-bold uppercase tracking-widest text-slate-400">
-          {hasScore ? "Estimated band" : "Speaking attempt"}
+          {isSpeaking ? "Speaking score" : hasScore ? "Estimated band" : "Speaking attempt"}
         </p>
         <p className={hasScore ? "text-8xl font-black mt-3" : "text-5xl font-black mt-4"}>
-          {hasScore ? data.score!.toFixed(1) : "Pending review"}
+          {scoreDisplay}
         </p>
-        {!hasScore && data.rawScore && (
+        {rawSummary && (
           <p className="mt-4 text-sm font-bold text-slate-500">
-            {data.rawScore.answered} of {data.rawScore.total} answers submitted
+            {rawSummary}
           </p>
         )}
       </section>

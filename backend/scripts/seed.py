@@ -4,6 +4,7 @@ import csv
 from pathlib import Path
 import sys
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 from uuid import NAMESPACE_URL, uuid5
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -12,6 +13,32 @@ sys.path.insert(0, str(BACKEND_DIR))
 from app.data import IELTS_ESSAYS, MOCK_TESTS, PRACTICE_QUESTIONS, VOCABULARY_WORDS
 from app.db import db_connection, jsonb
 from app.study_plan_catalog import STUDY_PLAN_CATALOG
+
+
+def nullable_csv_value(value: str | None) -> str | None:
+    cleaned = (value or "").strip()
+    if not cleaned or cleaned.lower() in {"null", "not available", "n/a"}:
+        return None
+    return cleaned
+
+
+def youtube_id_from_link(value: str | None) -> str | None:
+    cleaned = nullable_csv_value(value)
+    if not cleaned:
+        return None
+    if "/" not in cleaned and "?" not in cleaned:
+        return cleaned
+    parsed = urlparse(cleaned)
+    host = parsed.netloc.lower()
+    if host.endswith("youtu.be"):
+        return parsed.path.strip("/") or None
+    if "youtube.com" in host:
+        if parsed.path.startswith("/watch"):
+            return parse_qs(parsed.query).get("v", [None])[0]
+        for prefix in ("/embed/", "/shorts/"):
+            if parsed.path.startswith(prefix):
+                return parsed.path.removeprefix(prefix).split("/", 1)[0] or None
+    return cleaned
 
 
 LISTENING_TESTS: list[dict[str, Any]] = [
@@ -707,32 +734,43 @@ def section_content(skill: str) -> dict[str, Any]:
 
 def seed_lectures(cursor: Any) -> int:
     count = 0
-    with (BACKEND_DIR / "videos.csv").open(newline="", encoding="utf-8") as handle:
+    with (BACKEND_DIR / "videos_yt.csv").open(newline="", encoding="utf-8") as handle:
         for row_number, row in enumerate(csv.DictReader(handle), start=2):
-            source_key = f"videos.csv:{row_number}"
+            source_path = nullable_csv_value(row.get("title"))
+            if not source_path:
+                continue
+            youtube_link = nullable_csv_value(row.get("youtube_link"))
+            youtube_id = youtube_id_from_link(youtube_link)
+            is_published = (row.get("is_published") or "").strip().lower() not in {"false", "0", "no"}
+            is_published = bool(is_published and youtube_id)
             cursor.execute(
                 """
-                insert into public.lectures (
-                  source_key, title, vimeo_id, skill, duration, published_at,
-                  description, band_range, is_published
+                insert into public.lectures_yt (
+                  source_path, description, youtube_link, youtube_id, skill,
+                  duration, band_range, published_at, is_published
                 )
-                values (%s, %s, %s, %s, %s, %s, %s, %s, true)
-                on conflict (source_key) do update set
-                  title = excluded.title,
-                  vimeo_id = excluded.vimeo_id,
+                values (%s, %s, %s, %s, %s, %s, %s, coalesce(%s::date, current_date), %s)
+                on conflict (source_path) do update set
+                  description = excluded.description,
+                  youtube_link = excluded.youtube_link,
+                  youtube_id = excluded.youtube_id,
                   skill = excluded.skill,
                   duration = excluded.duration,
-                  published_at = excluded.published_at
+                  band_range = excluded.band_range,
+                  published_at = excluded.published_at,
+                  is_published = excluded.is_published,
+                  updated_at = now()
                 """,
                 (
-                    source_key,
-                    row["title"].strip(),
-                    row["vimeo_id"].strip(),
+                    source_path,
+                    nullable_csv_value(row.get("description")),
+                    youtube_link,
+                    youtube_id,
                     row["skill"].strip().upper(),
-                    row.get("duration", "").strip() or None,
-                    row["published_at"].strip(),
-                    f"{skill_name(row['skill'].strip().upper())} IELTS masterclass.",
-                    "6.0-9.0",
+                    nullable_csv_value(row.get("duration")),
+                    nullable_csv_value(row.get("band_range")) or "6.0-9.0",
+                    nullable_csv_value(row.get("published_at")),
+                    is_published,
                 ),
             )
             count += 1

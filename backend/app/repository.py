@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date
 import json
 import os
+import random
 import re
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -523,6 +524,26 @@ def save_admin_speaking_evaluation(
     return get_admin_speaking_attempt(attempt_id)
 
 
+def _youtube_embed_url(youtube_id: str | None) -> str | None:
+    if not youtube_id:
+        return None
+    return f"https://www.youtube-nocookie.com/embed/{youtube_id}"
+
+
+def _parse_lecture_source_path(source_path: str, skill: str) -> dict[str, str | None]:
+    parts = [part.strip() for part in source_path.split("/") if part.strip()]
+    title = parts[-1] if parts else source_path
+    module = next((part for part in parts if re.fullmatch(r"Module-\d+", part, flags=re.IGNORECASE)), None)
+    task = None
+    if skill == "W":
+        task = next((part for part in parts if re.fullmatch(r"Task-\d+", part, flags=re.IGNORECASE)), None)
+    return {
+        "title": title,
+        "module": module,
+        "task": task,
+    }
+
+
 def list_lectures(user_id: str, skill: str | None = None) -> list[dict[str, Any]]:
     params: list[Any] = [user_id]
     skill_filter = ""
@@ -533,7 +554,7 @@ def list_lectures(user_id: str, skill: str | None = None) -> list[dict[str, Any]
         f"""
         select l.*, coalesce(lp.progress, 0) as progress,
                coalesce(lp.watched, false) as watched
-        from public.lectures l
+        from public.lectures_yt l
         left join public.lecture_progress lp
           on lp.lecture_id = l.id and lp.user_id = %s
         where l.is_published {skill_filter}
@@ -544,10 +565,13 @@ def list_lectures(user_id: str, skill: str | None = None) -> list[dict[str, Any]
     return [
         {
             "id": str(row["id"]),
-            "title": row["title"],
+            "sourcePath": row["source_path"],
+            **_parse_lecture_source_path(row["source_path"], row["skill"]),
             "description": row["description"],
-            "vimeoId": row["vimeo_id"],
-            "embedUrl": f"https://player.vimeo.com/video/{row['vimeo_id']}",
+            "videoProvider": "youtube",
+            "youtubeLink": row["youtube_link"],
+            "youtubeId": row["youtube_id"],
+            "embedUrl": _youtube_embed_url(row["youtube_id"]),
             "skill": row["skill"],
             "duration": row["duration"] or "",
             "bandRange": row["band_range"] or "6.0-9.0",
@@ -2562,11 +2586,10 @@ def vocabulary_groups(user_id: str) -> list[dict[str, Any]]:
         left join public.vocabulary_progress vp
           on vp.word_id = w.id and vp.user_id = %s
         group by w.group_name
-        order by w.group_name
         """,
         (user_id,),
     )
-    return [
+    summaries = [
         {
             "group": row["group_name"],
             "wordCount": row["word_count"],
@@ -2574,6 +2597,7 @@ def vocabulary_groups(user_id: str) -> list[dict[str, Any]]:
         }
         for row in rows
     ]
+    return sorted(summaries, key=lambda item: vocabulary_test_no(item["group"]))
 
 
 def vocabulary_categories(user_id: str) -> list[dict[str, Any]]:
@@ -2605,6 +2629,286 @@ def save_vocabulary_review(user_id: str, word_id: str, result: str) -> dict[str,
         },
         "word": word,
     }
+
+
+def vocabulary_test_no(group_name: str) -> int:
+    match = re.search(r"\d+", group_name)
+    if not match:
+        raise ValueError("Vocabulary group must contain a number")
+    return int(match.group(0))
+
+
+def list_vocabulary_for_quiz(group_name: str) -> list[dict[str, Any]]:
+    rows = fetch_all(
+        """
+        select id, word, group_name, word_type, english_meaning, bangla_meaning,
+               sentence, sentence_bangla_meaning
+        from public.vocabulary_words
+        where group_name = %s
+        order by word
+        """,
+        (group_name,),
+    )
+    return [
+        {
+            "id": row["id"],
+            "word": row["word"],
+            "group": row["group_name"],
+            "type": row["word_type"],
+            "englishMeaning": row["english_meaning"],
+            "banglaMeaning": row["bangla_meaning"],
+            "sentence": row["sentence"],
+            "sentenceBanglaMeaning": row["sentence_bangla_meaning"],
+        }
+        for row in rows
+    ]
+
+
+def get_vocab_test(group_name: str) -> dict[str, Any] | None:
+    test_no = vocabulary_test_no(group_name)
+    row = fetch_one(
+        "select * from public.vocab_tests where test_no = %s",
+        (test_no,),
+    )
+    if not row:
+        return None
+    return {
+        "testNo": row["test_no"],
+        "group": row["group_name"],
+        "questions": row["questions"] or [],
+        "answers": row["answers"] or {},
+        "createdAt": _iso(row["created_at"]),
+        "updatedAt": _iso(row["updated_at"]),
+    }
+
+
+def save_vocab_test(group_name: str, questions: list[dict[str, Any]], answers: dict[str, Any]) -> dict[str, Any]:
+    test_no = vocabulary_test_no(group_name)
+    row = fetch_one(
+        """
+        insert into public.vocab_tests (test_no, group_name, questions, answers)
+        values (%s, %s, %s, %s)
+        on conflict (test_no) do update set
+          group_name = excluded.group_name,
+          questions = excluded.questions,
+          answers = excluded.answers,
+          updated_at = now()
+        returning *
+        """,
+        (test_no, group_name, jsonb(questions), jsonb(answers)),
+    )
+    return {
+        "testNo": row["test_no"],
+        "group": row["group_name"],
+        "questions": row["questions"] or [],
+        "answers": row["answers"] or {},
+        "createdAt": _iso(row["created_at"]),
+        "updatedAt": _iso(row["updated_at"]),
+    }
+
+
+def create_vocab_test_attempt(_user_id: str, test: dict[str, Any], question_count: int = 15) -> dict[str, Any]:
+    questions = list(test["questions"])
+    if len(questions) < question_count:
+        raise ValueError("Vocabulary quiz does not have enough questions")
+    selected_questions = random.sample(questions, question_count)
+    return {
+        "id": f"vocab-draft-{test['testNo']}",
+        "testNo": test["testNo"],
+        "status": "draft",
+        "selectedQuestions": selected_questions,
+        "answers": {},
+        "score": None,
+        "result": None,
+        "timeLimitSeconds": 600,
+        "createdAt": None,
+        "submittedAt": None,
+    }
+
+
+def vocab_test_attempt_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": str(row["id"]),
+        "testNo": row["test_no"],
+        "status": row["status"],
+        "selectedQuestions": row["selected_questions"] or [],
+        "answers": row["answers"] or {},
+        "score": row["score"],
+        "result": row["result"],
+        "timeLimitSeconds": 600,
+        "createdAt": _iso(row["started_at"]),
+        "submittedAt": _iso(row["submitted_at"]),
+    }
+
+
+def get_vocab_test_attempt(user_id: str, attempt_id: str) -> dict[str, Any] | None:
+    row = fetch_one(
+        "select * from public.vocab_test_attempts where id = %s and user_id = %s",
+        (attempt_id, user_id),
+    )
+    return row
+
+
+def submit_vocab_test_attempt(
+    user_id: str,
+    attempt_id: str,
+    submitted_answers: dict[str, Any],
+    duration_seconds: int | None,
+) -> dict[str, Any] | None:
+    current = get_vocab_test_attempt(user_id, attempt_id)
+    if not current:
+        return None
+    if current["status"] == "submitted":
+        return vocab_test_attempt_row(current)
+
+    test = fetch_one(
+        "select * from public.vocab_tests where test_no = %s",
+        (current["test_no"],),
+    )
+    if not test:
+        return None
+    answer_key = test["answers"] or {}
+    selected_questions = current["selected_questions"] or []
+    graded: list[dict[str, Any]] = []
+    correct = 0
+    for question in selected_questions:
+        question_id = question["id"]
+        expected = answer_key.get(question_id)
+        submitted = submitted_answers.get(question_id)
+        is_correct = _answer_matches(submitted, expected)
+        if is_correct:
+            correct += 1
+        graded.append(
+            {
+                "questionId": question_id,
+                "label": question.get("label"),
+                "type": question.get("type"),
+                "prompt": question.get("prompt"),
+                "answer": submitted,
+                "correctAnswer": expected,
+                "isCorrect": is_correct,
+                "score": 1 if is_correct else 0,
+            }
+        )
+
+    result = {
+        "testNo": current["test_no"],
+        "group": test["group_name"],
+        "score": correct,
+        "rawScore": {"correct": correct, "total": len(selected_questions)},
+        "answers": submitted_answers,
+        "gradedAnswers": graded,
+        "durationSeconds": duration_seconds,
+    }
+    row = fetch_one(
+        """
+        update public.vocab_test_attempts
+        set status = 'submitted',
+            answers = %s,
+            duration_seconds = %s,
+            score = %s,
+            result = %s,
+            submitted_at = now()
+        where id = %s and user_id = %s
+        returning *
+        """,
+        (
+            jsonb(submitted_answers),
+            duration_seconds,
+            correct,
+            jsonb(result),
+            attempt_id,
+            user_id,
+        ),
+    )
+    return vocab_test_attempt_row(row)
+
+
+def submit_new_vocab_test_attempt(
+    user_id: str,
+    test_no: int,
+    selected_question_ids: list[str],
+    submitted_answers: dict[str, Any],
+    duration_seconds: int | None,
+) -> dict[str, Any] | None:
+    test = fetch_one(
+        "select * from public.vocab_tests where test_no = %s",
+        (test_no,),
+    )
+    if not test:
+        return None
+    question_bank = {
+        question["id"]: question
+        for question in (test["questions"] or [])
+        if isinstance(question, dict) and question.get("id")
+    }
+    selected_questions = [
+        question_bank[question_id]
+        for question_id in selected_question_ids
+        if question_id in question_bank
+    ]
+    if len(selected_questions) != len(selected_question_ids):
+        return None
+
+    answer_key = test["answers"] or {}
+    graded: list[dict[str, Any]] = []
+    correct = 0
+    for question in selected_questions:
+        question_id = question["id"]
+        expected = answer_key.get(question_id)
+        submitted = submitted_answers.get(question_id)
+        is_correct = _answer_matches(submitted, expected)
+        if is_correct:
+            correct += 1
+        graded.append(
+            {
+                "questionId": question_id,
+                "label": question.get("label"),
+                "type": question.get("type"),
+                "prompt": question.get("prompt"),
+                "answer": submitted,
+                "correctAnswer": expected,
+                "isCorrect": is_correct,
+                "score": 1 if is_correct else 0,
+            }
+        )
+
+    result = {
+        "testNo": test_no,
+        "group": test["group_name"],
+        "score": correct,
+        "rawScore": {"correct": correct, "total": len(selected_questions)},
+        "answers": submitted_answers,
+        "gradedAnswers": graded,
+        "durationSeconds": duration_seconds,
+    }
+    row = fetch_one(
+        """
+        insert into public.vocab_test_attempts (
+          user_id,
+          test_no,
+          status,
+          selected_questions,
+          answers,
+          duration_seconds,
+          score,
+          result,
+          submitted_at
+        )
+        values (%s, %s, 'submitted', %s, %s, %s, %s, %s, now())
+        returning *
+        """,
+        (
+            user_id,
+            test_no,
+            jsonb(selected_questions),
+            jsonb(submitted_answers),
+            duration_seconds,
+            correct,
+            jsonb(result),
+        ),
+    )
+    return vocab_test_attempt_row(row)
 
 
 def _plan_part_sort_key(key: str) -> tuple[int, int, str]:
