@@ -12,6 +12,7 @@ from urllib.request import Request, urlopen
 from uuid import UUID
 
 from .db import db_connection, fetch_all, fetch_one, jsonb
+from .typing_course_catalog import TYPING_COURSE, TYPING_LESSONS_BY_ID
 
 
 LISTENING_ID_PREFIX = "listening-"
@@ -2541,6 +2542,139 @@ def typing_attempt_row(row: dict[str, Any]) -> dict[str, Any]:
         "accuracy": float(row["accuracy"]),
         "durationSeconds": row["duration_seconds"],
         "date": _iso(row["created_at"]),
+    }
+
+
+def get_typing_course(user_id: str) -> dict[str, Any]:
+    rows = fetch_all(
+        """
+        select lesson_id, wpm, accuracy, duration_seconds, passed, key_errors, created_at
+        from public.typing_lesson_attempts
+        where user_id = %s
+        order by created_at
+        """,
+        (user_id,),
+    )
+
+    progress_by_lesson: dict[str, dict[str, Any]] = {}
+    all_key_errors: dict[str, int] = {}
+    baseline_wpm: float | None = None
+    for row in rows:
+        if row["lesson_id"] == TYPING_COURSE[0]["id"] and baseline_wpm is None:
+            baseline_wpm = float(row["wpm"])
+        lesson_progress = progress_by_lesson.setdefault(
+            row["lesson_id"],
+            {
+                "completed": False,
+                "attemptCount": 0,
+                "bestWpm": 0.0,
+                "bestAccuracy": 0.0,
+                "lastAttemptAt": None,
+                "keyErrors": {},
+            },
+        )
+        lesson_progress["completed"] = lesson_progress["completed"] or row["passed"]
+        lesson_progress["attemptCount"] += 1
+        lesson_progress["bestWpm"] = max(lesson_progress["bestWpm"], float(row["wpm"]))
+        lesson_progress["bestAccuracy"] = max(lesson_progress["bestAccuracy"], float(row["accuracy"]))
+        lesson_progress["lastAttemptAt"] = _iso(row["created_at"])
+        for key, count in (row["key_errors"] or {}).items():
+            safe_key = str(key)[:12]
+            safe_count = max(0, int(count))
+            lesson_progress["keyErrors"][safe_key] = lesson_progress["keyErrors"].get(safe_key, 0) + safe_count
+            all_key_errors[safe_key] = all_key_errors.get(safe_key, 0) + safe_count
+
+    lessons: list[dict[str, Any]] = []
+    previous_completed = True
+    for lesson in TYPING_COURSE:
+        progress = progress_by_lesson.get(
+            lesson["id"],
+            {
+                "completed": False,
+                "attemptCount": 0,
+                "bestWpm": None,
+                "bestAccuracy": None,
+                "lastAttemptAt": None,
+                "keyErrors": {},
+            },
+        )
+        lessons.append({**lesson, "locked": not previous_completed, "progress": progress})
+        previous_completed = bool(progress["completed"])
+
+    completed_count = sum(1 for lesson in lessons if lesson["progress"]["completed"])
+    next_lesson = next((lesson for lesson in lessons if not lesson["locked"] and not lesson["progress"]["completed"]), None)
+    weak_keys = [
+        {"key": key, "errors": count}
+        for key, count in sorted(all_key_errors.items(), key=lambda item: (-item[1], item[0]))[:5]
+    ]
+    graduation_progress = progress_by_lesson.get(TYPING_COURSE[-1]["id"])
+    return {
+        "lessons": lessons,
+        "summary": {
+            "completedLessons": completed_count,
+            "totalLessons": len(lessons),
+            "progressPercent": round(completed_count / len(lessons) * 100),
+            "nextLessonId": next_lesson["id"] if next_lesson else None,
+            "weakKeys": weak_keys,
+            "baselineWpm": baseline_wpm,
+            "graduationWpm": graduation_progress["bestWpm"] if graduation_progress else None,
+        },
+    }
+
+
+def save_typing_lesson_attempt(
+    user_id: str,
+    lesson_id: str,
+    wpm: float,
+    accuracy: float,
+    duration_seconds: int,
+    key_errors: dict[str, int],
+) -> dict[str, Any]:
+    lesson = TYPING_LESSONS_BY_ID.get(lesson_id)
+    if not lesson:
+        raise KeyError(lesson_id)
+
+    if lesson["day"] > 1:
+        previous_lesson_id = TYPING_COURSE[lesson["day"] - 2]["id"]
+        previous = fetch_one(
+            """
+            select exists (
+              select 1 from public.typing_lesson_attempts
+              where user_id = %s and lesson_id = %s and passed
+            ) as completed
+            """,
+            (user_id, previous_lesson_id),
+        )
+        if not previous or not previous["completed"]:
+            raise PermissionError("Complete the previous lesson before starting this one")
+
+    sanitized_errors = {
+        str(key)[:12]: min(max(0, int(count)), 10000)
+        for key, count in list(key_errors.items())[:80]
+        if int(count) > 0
+    }
+    passed = accuracy >= lesson["targetAccuracy"]
+    row = fetch_one(
+        """
+        insert into public.typing_lesson_attempts (
+          user_id, lesson_id, wpm, accuracy, duration_seconds, passed, key_errors
+        )
+        values (%s, %s, %s, %s, %s, %s, %s)
+        returning *
+        """,
+        (user_id, lesson_id, wpm, accuracy, duration_seconds, passed, jsonb(sanitized_errors)),
+    )
+    if not row:
+        raise RuntimeError("Could not save typing lesson attempt")
+    return {
+        "id": str(row["id"]),
+        "lessonId": row["lesson_id"],
+        "wpm": float(row["wpm"]),
+        "accuracy": float(row["accuracy"]),
+        "durationSeconds": row["duration_seconds"],
+        "passed": row["passed"],
+        "keyErrors": row["key_errors"] or {},
+        "createdAt": _iso(row["created_at"]),
     }
 
 

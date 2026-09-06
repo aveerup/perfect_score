@@ -41,6 +41,7 @@ from .schemas import (
     SpeakingEvaluationRequest,
     SignupRequest,
     TypingAttemptRequest,
+    TypingLessonAttemptRequest,
     VocabQuizSubmitRequest,
     VocabularyReviewRequest,
 )
@@ -1975,6 +1976,39 @@ def save_typing_attempt(
     )
     delete_user_cache(user["id"])
     return attempt
+
+
+@router.get("/typing/course")
+def typing_course(
+    user: dict[str, Any] = Depends(require_supabase_user),
+) -> dict[str, Any]:
+    return cached_user_json(
+        user["id"],
+        "typing-course-v2",
+        lambda: repository.get_typing_course(user["id"]),
+    )
+
+
+@router.post("/typing/course/attempts")
+def save_typing_lesson_attempt(
+    payload: TypingLessonAttemptRequest,
+    user: dict[str, Any] = Depends(require_supabase_user),
+) -> dict[str, Any]:
+    try:
+        result = repository.save_typing_lesson_attempt(
+            user["id"],
+            payload.lessonId,
+            payload.wpm,
+            payload.accuracy,
+            payload.durationSeconds,
+            payload.keyErrors,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lesson not found") from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    delete_user_cache(user["id"])
+    return result
 
 
 @router.get("/search", response_model=SearchResponse)

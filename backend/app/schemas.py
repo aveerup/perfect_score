@@ -114,6 +114,14 @@ class TypingAttemptRequest(BaseModel):
     durationSeconds: int = Field(ge=0)
 
 
+class TypingLessonAttemptRequest(BaseModel):
+    lessonId: str = Field(min_length=1, max_length=80)
+    wpm: float = Field(ge=0, le=300)
+    accuracy: float = Field(ge=0, le=100)
+    durationSeconds: int = Field(ge=0, le=7200)
+    keyErrors: dict[str, int] = Field(default_factory=dict)
+
+
 class SearchResponse(BaseModel):
     practice: list[dict[str, Any]]
     lectures: list[dict[str, Any]]

@@ -327,6 +327,65 @@ export interface TypingPassage {
   bestAccuracy: number | null;
 }
 
+export type TypingExerciseKind = "warmup" | "guided" | "challenge";
+
+export interface TypingExercise {
+  id: string;
+  kind: TypingExerciseKind;
+  title: string;
+  text: string;
+  rounds: string[];
+  guidance: string;
+}
+
+export interface TypingLessonProgress {
+  completed: boolean;
+  attemptCount: number;
+  bestWpm: number | null;
+  bestAccuracy: number | null;
+  lastAttemptAt: string | null;
+  keyErrors: Record<string, number>;
+}
+
+export interface TypingLesson {
+  id: string;
+  day: number;
+  title: string;
+  focus: string;
+  keys: string[];
+  durationMinutes: number;
+  targetAccuracy: number;
+  targetWpm: number;
+  instructions: string[];
+  exercises: TypingExercise[];
+  locked: boolean;
+  progress: TypingLessonProgress;
+}
+
+export interface TypingCourse {
+  lessons: TypingLesson[];
+  summary: {
+    completedLessons: number;
+    totalLessons: number;
+    progressPercent: number;
+    nextLessonId: string | null;
+    weakKeys: { key: string; errors: number }[];
+    baselineWpm: number | null;
+    graduationWpm: number | null;
+  };
+}
+
+export interface TypingLessonAttemptResult {
+  id: string;
+  lessonId: string;
+  wpm: number;
+  accuracy: number;
+  durationSeconds: number;
+  passed: boolean;
+  keyErrors: Record<string, number>;
+  createdAt: string;
+}
+
 export interface VocabularyGroupSummary {
   group: VocabularyGroup;
   wordCount: number;
