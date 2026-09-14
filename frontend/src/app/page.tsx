@@ -157,19 +157,18 @@ const testimonials = [
   },
   {
     quote:
-      "Coaching centres wanted 15,000 taka. This cost me 999 a month and the mock test analysis was far more detailed.",
+      "Coaching centres wanted 15,000 taka. Perfect Score cost far less and the mock test analysis was far more detailed.",
     name: "Sadia R.",
     meta: "Band 8.5 overall · Sylhet",
   },
 ];
 
 const comparisonRows = [
-  ["Monthly cost", "999 taka", "12,000-20,000 taka"],
+  ["Limited-time offer", "850 taka for 1 year", "12,000-20,000 taka per course"],
   ["Study on your schedule", "Yes, 24/7", "Fixed batch timings"],
   ["Full mock tests", "Unlimited", "2-3 per course"],
   ["Section-level score analysis", "Automatic", "Rarely"],
   ["Re-watch any lesson", "Unlimited", "No"],
-  ["Cancel any time", "Yes", "Course fee is non-refundable"],
 ];
 
 const planRows = [
@@ -184,8 +183,12 @@ const planRows = [
 
 const faqs = [
   {
-    question: "Is 999 taka the full price?",
-    answer: "Yes. It is one membership at 999 taka per month, with no separate module fee.",
+    question: "What does the limited-time offer include?",
+    answer: "One payment of 850 taka gives you full Perfect Score access for 12 months, with no separate module fee.",
+  },
+  {
+    question: "What happens after the 12-month offer ends?",
+    answer: "Your access ends after 12 months. If you want to continue, you can manually renew for 850 taka per month. You will not be charged automatically.",
   },
   {
     question: "Academic or General Training?",
@@ -198,10 +201,6 @@ const faqs = [
   {
     question: "Are the mock tests scored?",
     answer: "Yes. Mock tests include section-level analysis so you know what to fix before the next attempt.",
-  },
-  {
-    question: "Can I cancel?",
-    answer: "Yes. You can cancel any time and keep access through the paid billing period.",
   },
   {
     question: "Does it work on my phone?",
@@ -249,6 +248,17 @@ function Header({ onAuthOpen }: { onAuthOpen: (mode: AuthMode) => void }) {
 
   return (
     <header className="sticky top-0 z-50 border-b border-neutral-200 bg-white/95 backdrop-blur">
+      <a
+        href="#pricing"
+        className="flex min-h-[72px] flex-col items-center justify-center gap-2 border-b border-black bg-lime-300 px-5 py-3 text-center text-black transition hover:bg-lime-200 sm:flex-row sm:gap-4"
+      >
+        <span className="bg-black px-3 py-1.5 text-xs font-black uppercase tracking-[0.2em] text-lime-300 sm:text-sm">
+          Limited-Time Offer
+        </span>
+        <span className="text-lg font-black leading-tight sm:text-2xl">Get 1 full year for only 850 tk</span>
+        <span className="hidden text-sm font-semibold text-neutral-700 lg:inline">Regularly 850 tk/month</span>
+        <ArrowRight className="hidden h-5 w-5 shrink-0 sm:block" />
+      </a>
       <div className="mx-auto flex h-[102px] w-full max-w-[1296px] items-center justify-between gap-5 px-5 md:px-8">
         <Link href="#what-you-get" aria-label="Perfect Score home" className="shrink-0">
           <LogoMark />
@@ -312,7 +322,7 @@ function Section({
   className?: string;
 }) {
   return (
-    <section id={id} className={`scroll-mt-28 border-b border-neutral-200 ${className}`}>
+    <section id={id} className={`scroll-mt-60 border-b border-neutral-200 md:scroll-mt-44 ${className}`}>
       <div className="mx-auto w-full max-w-[1262px] px-5 md:px-8">{children}</div>
     </section>
   );
@@ -375,8 +385,10 @@ function Hero({ onAuthOpen }: { onAuthOpen: (mode: AuthMode) => void }) {
     <Section id="what-you-get" className="bg-white">
       <div className="grid min-h-[595px] items-center gap-12 py-16 lg:grid-cols-[1.03fr_0.97fr] lg:py-20">
         <div>
-          <div className="mb-7 inline-flex border border-neutral-200 px-4 py-2 text-[13px] font-medium uppercase tracking-[0.34em]">
-            999 tk / month
+          <div className="mb-7 inline-flex items-center gap-3 border border-black bg-black px-4 py-2 text-[13px] font-bold uppercase tracking-[0.2em] text-white">
+            <span className="text-lime-300">Limited-Time Offer</span>
+            <span className="text-neutral-500">·</span>
+            <span>1 year for 850 tk</span>
           </div>
           <h1 className="max-w-[760px] text-[54px] font-black leading-[1.04] tracking-normal text-black md:text-[80px]">
             Band 8+ IELTS prep, without the noise.
@@ -390,12 +402,15 @@ function Hero({ onAuthOpen }: { onAuthOpen: (mode: AuthMode) => void }) {
               onClick={() => onAuthOpen("join")}
               className="inline-flex h-[58px] items-center justify-center gap-3 bg-black px-8 text-[17px] font-bold text-white transition hover:bg-neutral-800"
             >
-              Start for 999 tk <ArrowRight className="h-4 w-4" />
+              Get 1 year for 850 tk <ArrowRight className="h-4 w-4" />
             </button>
             <a href="#curriculum" className="inline-flex h-[58px] items-center justify-center border-b border-black text-[17px] font-bold text-black">
               See everything inside
             </a>
           </div>
+          <p className="mt-5 max-w-[585px] text-sm font-medium leading-6 text-neutral-500">
+            One payment covers 12 months. After that, access ends unless you manually renew for 850 tk per month.
+          </p>
         </div>
         <StudyPlanMockup />
       </div>
@@ -483,7 +498,7 @@ function Curriculum() {
 
 function Results() {
   return (
-    <section id="results" className="scroll-mt-28 bg-white">
+    <section id="results" className="scroll-mt-60 bg-white md:scroll-mt-44">
       <div className="bg-black py-24 text-white">
         <div className="mx-auto w-full max-w-[1262px] px-5 md:px-8">
           <h2 className="text-4xl font-black">How Perfect Score works</h2>
@@ -508,7 +523,7 @@ function Results() {
             ["138", "Video lessons"],
             ["4,200+", "Practice questions"],
             ["12", "Full mock tests"],
-            ["999", "Taka per month"],
+            ["850", "Taka for 1 year"],
           ].map(([num, label]) => (
             <div key={label}>
               <p className="text-4xl font-black md:text-[40px]">{num}</p>
@@ -631,17 +646,23 @@ function Pricing({ onAuthOpen }: { onAuthOpen: (mode: AuthMode) => void }) {
     "Full practice question bank",
     "Vocabulary trainer",
     "Unlimited mock tests",
-    "Cancel any time",
   ];
 
   return (
     <Section id="pricing" className="bg-white">
       <div className="py-28">
         <div className="mx-auto max-w-[826px] border border-black px-8 py-12 md:px-14 md:py-14">
-          <Eyebrow>One membership</Eyebrow>
+          <div className="mb-5 inline-flex bg-black px-4 py-2 text-[12px] font-bold uppercase tracking-[0.22em] text-lime-300">
+            Limited-Time Offer
+          </div>
+          <Eyebrow>One payment · 12 months of access</Eyebrow>
           <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
-            <p className="text-7xl font-black leading-none text-black">999</p>
-            <p className="pb-2 text-xl font-bold text-black">taka / month</p>
+            <p className="text-7xl font-black leading-none text-black">850</p>
+            <p className="pb-2 text-xl font-bold text-black">taka total</p>
+          </div>
+          <p className="mt-5 text-lg font-bold text-black">Full access to Perfect Score for one year.</p>
+          <div className="mt-6 border-l-4 border-black bg-neutral-100 px-5 py-4 text-sm font-medium leading-6 text-neutral-600">
+            Regular price is 850 taka per month. After 12 months, access ends unless you manually pay to continue. There is no automatic charge.
           </div>
           <div className="mt-12 grid gap-x-12 gap-y-5 md:grid-cols-2">
             {benefits.map((benefit) => (
@@ -656,7 +677,7 @@ function Pricing({ onAuthOpen }: { onAuthOpen: (mode: AuthMode) => void }) {
             onClick={() => onAuthOpen("join")}
             className="mt-12 flex h-[58px] w-full items-center justify-center gap-4 bg-neutral-800 px-6 text-base font-semibold text-white transition hover:bg-black"
           >
-            Join Perfect Score <ArrowRight className="h-4 w-4" />
+            Get 1 Year for 850 Taka <ArrowRight className="h-4 w-4" />
           </button>
         </div>
       </div>
@@ -746,12 +767,15 @@ function FinalCTA({ onAuthOpen }: { onAuthOpen: (mode: AuthMode) => void }) {
         <p className="mx-auto mt-6 max-w-[610px] text-base font-medium leading-7 text-neutral-400">
           Start today, follow the list, and walk into the test centre knowing exactly what every question type wants from you.
         </p>
+        <p className="mx-auto mt-5 text-sm font-bold uppercase tracking-[0.18em] text-lime-300">
+          Limited-time offer · 12 months for 850 taka
+        </p>
         <button
           type="button"
           onClick={() => onAuthOpen("join")}
           className="mt-10 inline-flex h-12 items-center justify-center gap-4 bg-white px-7 text-base font-bold text-black transition hover:bg-neutral-200"
         >
-          Join for 999 tk / month <ArrowRight className="h-4 w-4" />
+          Get 1 Year for 850 Taka <ArrowRight className="h-4 w-4" />
         </button>
       </div>
     </section>

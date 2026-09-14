@@ -41,7 +41,7 @@ export function AuthJoinPanel({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [transactionId, setTransactionId] = useState("");
-  const [planName, setPlanName] = useState("Standard");
+  const [planName, setPlanName] = useState("1-Year Limited-Time Offer");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -328,7 +328,7 @@ export function AuthJoinPanel({
                     label="Plan Name"
                     value={planName}
                     onChange={setPlanName}
-                    placeholder="Standard"
+                    placeholder="1-Year Limited-Time Offer"
                   />
                 </div>
 
@@ -423,7 +423,7 @@ function JoinDetails() {
 
 function JoinProcedureList() {
   const steps = [
-    "Send the membership payment through the official Perfect Score payment channel.",
+    "Send the 850 taka payment for the 1-year limited-time offer through bKash number 01782592006.",
     "Copy the transaction ID exactly from your payment confirmation message.",
     "Enter your email, transaction ID, and selected plan name.",
     "Our team verifies the payment and activates access for that email.",

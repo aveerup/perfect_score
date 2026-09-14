@@ -18,7 +18,7 @@ const sections = [
   },
   {
     title: "4. Subscription and Payments",
-    content: "Certain features of Perfect Score require a paid subscription. All payments are processed securely through our payment partners. Subscriptions are billed on a monthly or annual basis as selected at checkout. You may cancel your subscription at any time; cancellation takes effect at the end of the current billing period. Perfect Score does not offer refunds for partial billing periods, except where required by applicable law.",
+    content: "Certain features of Perfect Score require a paid subscription. All payments are processed securely through our payment partners. Subscriptions are billed on a monthly or annual basis as selected at checkout. Perfect Score does not offer refunds for partial billing periods, except where required by applicable law.",
   },
   {
     title: "5. Intellectual Property",

@@ -34,7 +34,6 @@ const categories = [
     icon: CreditCard, label: "Billing & Plans",
     faqs: [
       { q: "How do I upgrade to Pro?", a: "Go to Settings → Billing, or click any locked feature. We accept bKash, Nagad, Rocket, debit/credit cards, and bank transfer." },
-      { q: "Can I cancel my subscription?", a: "Yes, anytime. Go to Settings → Billing → Cancel. Your access continues until the end of your billing period. No partial refunds." },
       { q: "Do you offer a student discount?", a: "Students with a valid .edu email receive 30% off the annual Pro plan. Email support@perfectscore.app with your student ID." },
     ],
   },
@@ -104,7 +103,7 @@ export default function HelpPage() {
               <input
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                placeholder="e.g. how to cancel subscription..."
+                placeholder="e.g. how to access mock tests..."
                 className="w-full h-14 pl-12 pr-5 rounded-2xl border-0 bg-white text-slate-900 text-sm font-medium placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-accent/50 shadow-xl"
               />
             </motion.div>
