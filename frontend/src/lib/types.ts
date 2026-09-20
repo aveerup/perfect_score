@@ -43,10 +43,12 @@ export interface VocabularyWord {
   sentence: string;
   sentenceBanglaMeaning: string;
   masteryLevel: 0 | 1 | 2 | 3 | 4;
+  comfortLevel: VocabularyComfortLevel;
   group: VocabularyGroup;
 }
 
 export type VocabularyGroup = string;
+export type VocabularyComfortLevel = "uncomfortable" | "almost" | "comfortable";
 
 export type VocabQuizAnswerType = "mcq" | "input";
 

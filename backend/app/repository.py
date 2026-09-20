@@ -19,6 +19,7 @@ LISTENING_ID_PREFIX = "listening-"
 READING_ID_PREFIX = "reading-"
 WRITING_ID_PREFIX = "writing-"
 SPEAKING_ID_PREFIX = "speaking-"
+VOCAB_COMFORT_LEVELS = ("uncomfortable", "almost", "comfortable")
 
 
 def slugify(value: str) -> str:
@@ -2679,17 +2680,21 @@ def save_typing_lesson_attempt(
 
 
 def list_vocabulary(user_id: str, group: str | None = None) -> list[dict[str, Any]]:
-    params: list[Any] = [user_id]
+    params: list[Any] = [user_id, user_id]
     group_filter = ""
     if group:
         group_filter = "where w.group_name = %s"
         params.append(group)
     rows = fetch_all(
         f"""
-        select w.*, coalesce(vp.mastery_level, 0) as mastery_level
+        select w.*,
+               coalesce(vp.mastery_level, 0) as mastery_level,
+               coalesce(vc.comfort_level, 'uncomfortable') as comfort_level
         from public.vocabulary_words w
         left join public.vocabulary_progress vp
           on vp.word_id = w.id and vp.user_id = %s
+        left join public.vocabulary_comfort vc
+          on vc.vocabulary_id = w.id and vc.uid = %s
         {group_filter}
         order by w.group_name, w.word
         """,
@@ -2706,6 +2711,7 @@ def list_vocabulary(user_id: str, group: str | None = None) -> list[dict[str, An
             "sentence": row["sentence"],
             "sentenceBanglaMeaning": row["sentence_bangla_meaning"],
             "masteryLevel": row["mastery_level"],
+            "comfortLevel": row["comfort_level"],
         }
         for row in rows
     ]
@@ -2762,6 +2768,43 @@ def save_vocabulary_review(user_id: str, word_id: str, result: str) -> dict[str,
             "date": _iso(row["updated_at"]),
         },
         "word": word,
+    }
+
+
+def save_vocabulary_comfort(user_id: str, word_id: str, comfort_level: str) -> dict[str, Any]:
+    if comfort_level not in VOCAB_COMFORT_LEVELS:
+        raise ValueError("Invalid vocabulary comfort level")
+    word = fetch_one(
+        "select id, group_name from public.vocabulary_words where id = %s",
+        (word_id,),
+    )
+    if not word:
+        raise LookupError("Vocabulary word not found")
+    row = fetch_one(
+        """
+        insert into public.vocabulary_comfort (
+          uid, vocabulary_id, group_name, comfort_level
+        )
+        values (%s, %s, %s, %s)
+        on conflict (uid, vocabulary_id) do update set
+          group_name = excluded.group_name,
+          comfort_level = excluded.comfort_level,
+          updated_at = now()
+        returning *
+        """,
+        (user_id, word_id, word["group_name"], comfort_level),
+    )
+    updated_word = next(item for item in list_vocabulary(user_id, word["group_name"]) if item["id"] == word_id)
+    return {
+        "comfort": {
+            "id": str(row["id"]),
+            "uid": str(row["uid"]),
+            "wordId": row["vocabulary_id"],
+            "groupName": row["group_name"],
+            "comfortLevel": row["comfort_level"],
+            "updatedAt": _iso(row["updated_at"]),
+        },
+        "word": updated_word,
     }
 
 
@@ -2841,11 +2884,66 @@ def save_vocab_test(group_name: str, questions: list[dict[str, Any]], answers: d
     }
 
 
-def create_vocab_test_attempt(_user_id: str, test: dict[str, Any], question_count: int = 15) -> dict[str, Any]:
+def vocabulary_comfort_map(user_id: str, group_name: str) -> dict[str, str]:
+    rows = fetch_all(
+        """
+        select vocabulary_id, comfort_level
+        from public.vocabulary_comfort
+        where uid = %s and group_name = %s
+        """,
+        (user_id, group_name),
+    )
+    return {
+        row["vocabulary_id"]: row["comfort_level"]
+        for row in rows
+        if row["comfort_level"] in VOCAB_COMFORT_LEVELS
+    }
+
+
+def weighted_vocab_questions(
+    questions: list[dict[str, Any]],
+    comfort_by_word: dict[str, str],
+    question_count: int,
+) -> list[dict[str, Any]]:
+    pools: dict[str, list[dict[str, Any]]] = {level: [] for level in VOCAB_COMFORT_LEVELS}
+    for question in questions:
+        word_id = str(question.get("wordId") or "")
+        comfort_level = comfort_by_word.get(word_id, "uncomfortable")
+        if comfort_level not in pools:
+            comfort_level = "uncomfortable"
+        pools[comfort_level].append(question)
+
+    for pool in pools.values():
+        random.shuffle(pool)
+
+    targets = {
+        "uncomfortable": int(question_count * 0.60),
+        "almost": int(question_count * 0.30),
+    }
+    targets["comfortable"] = question_count - targets["uncomfortable"] - targets["almost"]
+
+    selected: list[dict[str, Any]] = []
+    for comfort_level in VOCAB_COMFORT_LEVELS:
+        target = targets[comfort_level]
+        selected.extend(pools[comfort_level][:target])
+        pools[comfort_level] = pools[comfort_level][target:]
+
+    remaining = question_count - len(selected)
+    if remaining > 0:
+        leftovers = [question for pool in pools.values() for question in pool]
+        random.shuffle(leftovers)
+        selected.extend(leftovers[:remaining])
+
+    random.shuffle(selected)
+    return selected
+
+
+def create_vocab_test_attempt(user_id: str, test: dict[str, Any], question_count: int = 15) -> dict[str, Any]:
     questions = list(test["questions"])
     if len(questions) < question_count:
         raise ValueError("Vocabulary quiz does not have enough questions")
-    selected_questions = random.sample(questions, question_count)
+    comfort_by_word = vocabulary_comfort_map(user_id, test["group"])
+    selected_questions = weighted_vocab_questions(questions, comfort_by_word, question_count)
     return {
         "id": f"vocab-draft-{test['testNo']}",
         "testNo": test["testNo"],

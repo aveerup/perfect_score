@@ -3,25 +3,88 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, ChevronLeft, ChevronRight, ClipboardCheck, RotateCw } from "lucide-react";
-import { useApiData } from "@/lib/api";
-import { VocabularyWord } from "@/lib/types";
+import { ArrowLeft, ChevronLeft, ChevronRight, ClipboardCheck, Info, RotateCw } from "lucide-react";
+import { api, useApiData } from "@/lib/api";
+import { VocabularyComfortLevel, VocabularyWord } from "@/lib/types";
+
+type VocabularyComfortResponse = {
+  word: VocabularyWord;
+};
+
+const comfortOptions: {
+  value: VocabularyComfortLevel;
+  label: string;
+  className: string;
+  selectedClassName: string;
+}[] = [
+  {
+    value: "comfortable",
+    label: "Comfortable",
+    className: "border-emerald-200 bg-emerald-50/40 text-emerald-700 hover:bg-emerald-50",
+    selectedClassName: "border-emerald-600 bg-emerald-500 text-white shadow-sm",
+  },
+  {
+    value: "almost",
+    label: "Almost",
+    className: "border-yellow-200 bg-yellow-50/40 text-yellow-700 hover:bg-yellow-50",
+    selectedClassName: "border-yellow-500 bg-yellow-300 text-yellow-950 shadow-sm",
+  },
+  {
+    value: "uncomfortable",
+    label: "Uncomfortable",
+    className: "border-red-200 bg-red-50/40 text-red-700 hover:bg-red-50",
+    selectedClassName: "border-red-600 bg-red-500 text-white shadow-sm",
+  },
+];
 
 export default function VocabularyCategoryPage() {
   const params = useParams<{ category: string }>();
   const router = useRouter();
   const group = decodeURIComponent(params.category);
-  const { data: words, loading, error } = useApiData<VocabularyWord[]>(
+  const { data: words, setData: setWords, loading, error } = useApiData<VocabularyWord[]>(
     `/vocabulary?group=${encodeURIComponent(group)}`,
     [],
   );
   const [index, setIndex] = useState(0);
   const [flipped, setFlipped] = useState(false);
+  const [savingComfort, setSavingComfort] = useState<VocabularyComfortLevel | null>(null);
+  const [comfortError, setComfortError] = useState("");
   const current = words[index];
 
   const goToWord = (direction: 1 | -1) => {
     setIndex((value) => (value + direction + words.length) % words.length);
     setFlipped(false);
+    setComfortError("");
+  };
+
+  const setComfortLevel = async (comfortLevel: VocabularyComfortLevel) => {
+    if (!current || current.comfortLevel === comfortLevel || savingComfort) return;
+
+    const previousWords = words;
+    setComfortError("");
+    setSavingComfort(comfortLevel);
+    setWords((items) =>
+      items.map((word) =>
+        word.id === current.id ? { ...word, comfortLevel } : word,
+      ),
+    );
+
+    try {
+      const response = await api.post<VocabularyComfortResponse>("/vocabulary/comfort", {
+        wordId: current.id,
+        comfortLevel,
+      });
+      setWords((items) =>
+        items.map((word) =>
+          word.id === response.word.id ? response.word : word,
+        ),
+      );
+    } catch (requestError) {
+      setWords(previousWords);
+      setComfortError(requestError instanceof Error ? requestError.message : "Could not save comfort level");
+    } finally {
+      setSavingComfort(null);
+    }
   };
 
   if (loading) return <div className="py-20 text-center text-slate-400">Loading words...</div>;
@@ -44,6 +107,40 @@ export default function VocabularyCategoryPage() {
             Start Quiz
           </Link>
           <p className="font-bold">Level {current.masteryLevel}/4</p>
+          <div className="flex w-full items-center gap-2 sm:w-[26rem]">
+            <div className="grid min-w-0 flex-1 grid-cols-3 gap-2">
+              {comfortOptions.map((option) => {
+                const selected = current.comfortLevel === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => void setComfortLevel(option.value)}
+                    disabled={Boolean(savingComfort)}
+                    aria-pressed={selected}
+                    className={`min-h-10 border px-2 text-center text-[0.68rem] font-black uppercase tracking-wide transition ${
+                      selected ? option.selectedClassName : option.className
+                    } ${savingComfort ? "cursor-wait" : ""}`}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="group relative shrink-0">
+              <button
+                type="button"
+                aria-label="Comfort level info"
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 transition hover:border-primary hover:text-primary focus:border-primary focus:text-primary focus:outline-none"
+              >
+                <Info className="h-4 w-4" />
+              </button>
+              <div className="pointer-events-none absolute right-0 top-11 z-10 w-64 border border-slate-200 bg-white p-3 text-left text-xs font-bold leading-relaxed text-slate-600 opacity-0 shadow-lg transition group-hover:opacity-100 group-focus-within:opacity-100">
+                Choose how comfortable you are with the current flashcard&apos;s word. The quiz questions are made based on your comfort level.
+              </div>
+            </div>
+          </div>
+          {comfortError && <p className="max-w-sm text-right text-xs font-bold text-red-500">{comfortError}</p>}
         </div>
       </header>
 

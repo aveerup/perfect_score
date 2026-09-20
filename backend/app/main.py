@@ -42,6 +42,7 @@ from .schemas import (
     SignupRequest,
     TypingAttemptRequest,
     TypingLessonAttemptRequest,
+    VocabularyComfortRequest,
     VocabQuizSubmitRequest,
     VocabularyReviewRequest,
 )
@@ -1839,6 +1840,21 @@ def review_vocabulary(
     )
     delete_user_cache(user["id"])
     return review
+
+
+@router.post("/vocabulary/comfort")
+def set_vocabulary_comfort(
+    payload: VocabularyComfortRequest,
+    user: dict[str, Any] = Depends(require_supabase_user),
+) -> dict[str, Any]:
+    try:
+        comfort = repository.save_vocabulary_comfort(
+            user["id"], payload.wordId, payload.comfortLevel
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    delete_user_cache(user["id"])
+    return comfort
 
 
 @router.post("/vocabulary/groups/{group_name}/quiz/start")

@@ -95,6 +95,11 @@ class VocabularyReviewRequest(BaseModel):
     result: Literal["again", "hard", "good", "easy", "known"]
 
 
+class VocabularyComfortRequest(BaseModel):
+    wordId: str
+    comfortLevel: Literal["uncomfortable", "almost", "comfortable"]
+
+
 class VocabQuizSubmitRequest(BaseModel):
     testNo: int = Field(ge=1)
     selectedQuestionIds: list[str] = Field(min_length=1, max_length=15)
