@@ -90,6 +90,81 @@ class SessionSubmitRequest(BaseModel):
     speakingTranscript: str | None = None
 
 
+class ReadingPassageComponent(BaseModel):
+    id: str = Field(min_length=1, max_length=100)
+    type: Literal["passage"]
+    markdown: str = ""
+
+
+class ReadingGapQuestion(BaseModel):
+    id: str = Field(min_length=1, max_length=100)
+    text: str
+    answer: str = ""
+
+
+class ReadingFillGapsComponent(BaseModel):
+    id: str = Field(min_length=1, max_length=100)
+    type: Literal["fillGaps"]
+    heading: str = ""
+    answerEnabled: bool = False
+    questions: list[ReadingGapQuestion] = Field(default_factory=list)
+
+
+class ReadingMcqOption(BaseModel):
+    id: str = Field(min_length=1, max_length=100)
+    text: str
+
+
+class ReadingMcqQuestion(BaseModel):
+    id: str = Field(min_length=1, max_length=100)
+    text: str
+    options: list[ReadingMcqOption] = Field(default_factory=list)
+    correctOptionId: str = ""
+
+
+class ReadingMcqComponent(BaseModel):
+    id: str = Field(min_length=1, max_length=100)
+    type: Literal["mcq"]
+    heading: str = ""
+    answerEnabled: bool = False
+    questions: list[ReadingMcqQuestion] = Field(default_factory=list)
+
+
+class ReadingCompleteSentenceQuestion(BaseModel):
+    id: str = Field(min_length=1, max_length=100)
+    text: str
+    correctEndingId: str = ""
+
+
+class ReadingSentenceEnding(BaseModel):
+    id: str = Field(min_length=1, max_length=100)
+    text: str
+
+
+class ReadingCompleteSentenceComponent(BaseModel):
+    id: str = Field(min_length=1, max_length=100)
+    type: Literal["completeSentence"]
+    heading: str = ""
+    answerEnabled: bool = False
+    questions: list[ReadingCompleteSentenceQuestion] = Field(default_factory=list)
+    endings: list[ReadingSentenceEnding] = Field(default_factory=list)
+
+
+class ReadingSetRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    components: list[
+        ReadingPassageComponent
+        | ReadingFillGapsComponent
+        | ReadingMcqComponent
+        | ReadingCompleteSentenceComponent
+    ] = Field(default_factory=list)
+    isPublished: bool = False
+
+
+class ReadingSubmitRequest(BaseModel):
+    answers: dict[str, str] = Field(default_factory=dict)
+
+
 class VocabularyReviewRequest(BaseModel):
     wordId: str
     result: Literal["again", "hard", "good", "easy", "known"]

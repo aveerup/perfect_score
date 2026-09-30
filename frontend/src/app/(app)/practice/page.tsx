@@ -142,7 +142,7 @@ export default function PracticeHomePage() {
                       <div className="flex items-center gap-2">
                         <CheckCircle2 className="w-5 h-5 text-green-500" strokeWidth={3} />
                         <span className="text-[10px] font-black text-slate-900 uppercase tracking-widest">
-                          Score: {q.score}
+                          {q.score ? `Score: ${q.score}` : "Submitted"}
                         </span>
                       </div>
                     ) : (

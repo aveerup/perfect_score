@@ -3,6 +3,7 @@
 import { FormEvent, useMemo, useState } from "react";
 import {
   ArrowLeft,
+  BookOpen,
   Check,
   ClipboardCheck,
   Loader2,
@@ -18,6 +19,7 @@ import {
   X,
 } from "lucide-react";
 import { api, useApiData } from "@/lib/api";
+import { ReadingSetManager } from "@/components/admin/ReadingSetManager";
 
 type AdminUser = {
   id: string;
@@ -110,13 +112,14 @@ type SpeakingEvaluationDetail = SpeakingEvaluationSummary & {
   questions: SpeakingEvaluationQuestion[];
 };
 
-type TabKey = "users" | "transactions" | "evaluations";
+type TabKey = "users" | "transactions" | "evaluations" | "practice";
 type EvaluationSkill = "speaking" | "writing";
 
 const tabs: { key: TabKey; label: string; icon: typeof Users }[] = [
   { key: "users", label: "Users", icon: Users },
   { key: "transactions", label: "Transactions", icon: ReceiptText },
   { key: "evaluations", label: "Evaluation", icon: ClipboardCheck },
+  { key: "practice", label: "Practice", icon: BookOpen },
 ];
 
 function formatDate(value: string) {
@@ -323,13 +326,17 @@ export default function AdminPage() {
       ? usersError
       : activeTab === "transactions"
         ? transactionsError
-        : speakingAttemptsError;
+        : activeTab === "evaluations"
+          ? speakingAttemptsError
+          : "";
   const activeLoading =
     activeTab === "users"
       ? usersLoading
       : activeTab === "transactions"
         ? transactionsLoading
-        : speakingAttemptsLoading;
+        : activeTab === "evaluations"
+          ? speakingAttemptsLoading
+          : false;
 
   return (
     <div className="relative space-y-8">
@@ -360,7 +367,7 @@ export default function AdminPage() {
 
       <section className="border border-slate-100 bg-white">
         <div className="flex flex-col gap-4 border-b border-slate-100 p-4 md:flex-row md:items-center md:justify-between">
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {tabs.map(({ key, label, icon: Icon }) => {
               const isActive = activeTab === key;
               return (
@@ -478,6 +485,8 @@ export default function AdminPage() {
               </tbody>
             </table>
           </div>
+        ) : activeTab === "practice" ? (
+          <ReadingSetManager />
         ) : (
           <EvaluationPanel
             skill={evaluationSkill}

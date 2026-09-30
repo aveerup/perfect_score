@@ -4,11 +4,18 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useApiData } from "@/lib/api";
 import { PracticeResult } from "@/lib/types";
+import { ReadingModifiedResults } from "@/components/reading/ReadingModifiedResults";
+import { READING_MODIFIED_PREFIX } from "@/lib/reading-modified";
 
 export default function PracticeResultsPage() {
   const params = useParams<{ id: string }>();
+  if (params.id.startsWith(READING_MODIFIED_PREFIX)) return <ReadingModifiedResults practiceId={params.id} />;
+  return <StandardPracticeResults practiceId={params.id} />;
+}
+
+function StandardPracticeResults({ practiceId }: { practiceId: string }) {
   const { data, loading, error } = useApiData<PracticeResult | null>(
-    `/practice/${params.id}/results`,
+    `/practice/${practiceId}/results`,
     null,
   );
 
@@ -75,7 +82,7 @@ export default function PracticeResultsPage() {
       </section>
 
       <div className="flex gap-4">
-        <Link href={`/practice/${params.id}`} className="px-6 py-3 rounded-xl border border-slate-200 font-bold">Retry</Link>
+        <Link href={`/practice/${practiceId}`} className="px-6 py-3 rounded-xl border border-slate-200 font-bold">Retry</Link>
         <Link href="/practice" className="px-6 py-3 rounded-xl bg-primary text-white font-bold">All practice sets</Link>
       </div>
     </div>

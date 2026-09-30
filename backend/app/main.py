@@ -11,9 +11,10 @@ import re
 from pathlib import Path
 from statistics import mean
 from typing import Any
-from uuid import uuid4
+from urllib.parse import quote
+from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Cookie, Depends, FastAPI, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Cookie, Depends, FastAPI, File, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -34,6 +35,8 @@ from .schemas import (
     PasswordUpdateRequest,
     PlanPartCompletionRequest,
     ProfileUpdate,
+    ReadingSetRequest,
+    ReadingSubmitRequest,
     SearchResponse,
     SessionCreateRequest,
     SessionPatchRequest,
@@ -46,7 +49,7 @@ from .schemas import (
     VocabQuizSubmitRequest,
     VocabularyReviewRequest,
 )
-from . import repository
+from . import reading_modified, repository
 from .cache import cached_common_json, cached_user_json, delete_user_cache
 
 
@@ -58,6 +61,7 @@ SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_KEY = os.getenv("SUPABASE_PUBLISHABLE_KEY") or os.getenv("SUPABASE_ANON_KEY", "")
 SUPABASE_ADMIN_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_SECRET_KEY", "")
 SPEAKING_AUDIO_BUCKET = os.getenv("SPEAKING_AUDIO_BUCKET", "speaking_tests_audio").strip("/")
+READING_IMAGE_BUCKET = os.getenv("READING_IMAGE_BUCKET", "reading_test_passage_images").strip("/")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 AUTH_COOKIE_SECURE = os.getenv("AUTH_COOKIE_SECURE", "false").lower() == "true"
@@ -1300,7 +1304,7 @@ def practice(
         if not skill or skill in {"All", "L"}:
             items.extend(repository.list_listening_tests(user["id"]))
         if not skill or skill in {"All", "R"}:
-            items.extend(repository.list_reading_tests(user["id"]))
+            items.extend(reading_modified.list_student_sets(user["id"]))
         if not skill or skill in {"All", "W"}:
             items.extend(repository.list_writing_tests(user["id"]))
         if not skill or skill in {"All", "S"}:
@@ -1311,11 +1315,7 @@ def practice(
             items = [item for item in items if item["difficulty"] == difficulty]
         return items
 
-    return cached_user_json(
-        user["id"],
-        f"practice:{skill or 'all'}:{difficulty or 'all'}",
-        build_practice_list,
-    )
+    return build_practice_list()
 
 
 @router.get("/practice/{practice_id}")
@@ -2062,6 +2062,188 @@ def bootstrap(
 @router.get("/subscription")
 def subscription(_: dict[str, Any] = Depends(require_supabase_user)) -> dict[str, Any]:
     return {"plan": "Free", "status": "active", "renewsOn": None}
+
+
+def reading_set_values(payload: ReadingSetRequest) -> list[dict[str, Any]]:
+    if not payload.title.strip():
+        raise HTTPException(status_code=422, detail="Enter a reading set title")
+    components = [component.model_dump() for component in payload.components]
+    if payload.isPublished and not any(
+        component["type"] in {"fillGaps", "mcq", "completeSentence"} and component["questions"]
+        for component in components
+    ):
+        raise HTTPException(status_code=422, detail="Add at least one question before publishing")
+    return components
+
+
+@router.get("/admin/reading-sets")
+def admin_reading_sets(_: dict[str, Any] = Depends(require_admin)) -> list[dict[str, Any]]:
+    return reading_modified.list_admin_sets()
+
+
+@router.post("/admin/reading-sets", status_code=status.HTTP_201_CREATED)
+def create_admin_reading_set(
+    payload: ReadingSetRequest,
+    _: dict[str, Any] = Depends(require_admin),
+) -> dict[str, Any]:
+    try:
+        return reading_modified.create_set(payload.title.strip(), reading_set_values(payload), payload.isPublished)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.put("/admin/reading-sets/{test_id}")
+def update_admin_reading_set(
+    test_id: UUID,
+    payload: ReadingSetRequest,
+    _: dict[str, Any] = Depends(require_admin),
+) -> dict[str, Any]:
+    try:
+        updated = reading_modified.update_set(test_id, payload.title.strip(), reading_set_values(payload), payload.isPublished)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if not updated:
+        raise HTTPException(status_code=404, detail="Reading set not found")
+    return updated
+
+
+@router.delete("/admin/reading-sets/{test_id}")
+def delete_admin_reading_set(
+    test_id: UUID,
+    _: dict[str, Any] = Depends(require_admin),
+) -> dict[str, bool]:
+    if not reading_modified.delete_set(test_id):
+        raise HTTPException(status_code=404, detail="Reading set not found")
+    return {"deleted": True}
+
+
+def reading_image_payload(row: dict[str, Any], request: Request) -> dict[str, Any]:
+    return {
+        "id": str(row["id"]),
+        "filename": row["filename"],
+        "url": str(request.url_for("get_reading_image", image_id=str(row["id"]))),
+        "createdAt": row["created_at"].isoformat(),
+    }
+
+
+@router.get("/admin/reading-images")
+def admin_reading_images(
+    request: Request,
+    _: dict[str, Any] = Depends(require_admin),
+) -> list[dict[str, Any]]:
+    return [reading_image_payload(row, request) for row in reading_modified.list_images()]
+
+
+@router.post("/admin/reading-images", status_code=status.HTTP_201_CREATED)
+async def upload_admin_reading_image(
+    request: Request,
+    file: UploadFile = File(...),
+    _: dict[str, Any] = Depends(require_admin),
+) -> dict[str, Any]:
+    allowed = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif"}
+    content_type = file.content_type or ""
+    if content_type not in allowed:
+        raise HTTPException(status_code=422, detail="Upload a PNG, JPEG, WebP, or GIF image")
+    content = await file.read(5 * 1024 * 1024 + 1)
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Images must be 5 MB or smaller")
+    signatures = {
+        "image/png": content.startswith(b"\x89PNG\r\n\x1a\n"),
+        "image/jpeg": content.startswith(b"\xff\xd8\xff"),
+        "image/webp": content.startswith(b"RIFF") and content[8:12] == b"WEBP",
+        "image/gif": content.startswith((b"GIF87a", b"GIF89a")),
+    }
+    if not signatures[content_type]:
+        raise HTTPException(status_code=422, detail="The uploaded file is not a valid image of that type")
+    object_path = f"{uuid4()}.{allowed[content_type]}"
+    endpoint = f"{SUPABASE_URL}/storage/v1/object/{quote(READING_IMAGE_BUCKET, safe='')}/{object_path}"
+    try:
+        response = httpx2.post(
+            endpoint,
+            headers={**supabase_admin_headers(), "Content-Type": content_type},
+            content=content,
+            timeout=30.0,
+        )
+    except httpx2.RequestError as exc:
+        raise HTTPException(status_code=503, detail="Storage service is unavailable") from exc
+    if response.status_code not in {200, 201}:
+        raise HTTPException(status_code=502, detail=supabase_error_message(response))
+    row = reading_modified.save_image(object_path, Path(file.filename or "image").name, content_type)
+    return reading_image_payload(row, request)
+
+
+@router.get("/reading-images/{image_id}", name="get_reading_image")
+def get_reading_image(
+    image_id: UUID,
+    _: dict[str, Any] = Depends(require_supabase_user),
+) -> Response:
+    image = reading_modified.get_image(image_id)
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found")
+    endpoint = (
+        f"{SUPABASE_URL}/storage/v1/object/"
+        f"{quote(READING_IMAGE_BUCKET, safe='')}/{quote(image['object_path'], safe='/')}"
+    )
+    try:
+        response = httpx2.get(endpoint, headers=supabase_admin_headers(), timeout=30.0)
+    except httpx2.RequestError as exc:
+        raise HTTPException(status_code=503, detail="Storage service is unavailable") from exc
+    if response.status_code != 200:
+        raise HTTPException(status_code=502, detail="Could not load image")
+    return Response(content=response.content, media_type=image["content_type"], headers={"Cache-Control": "private, max-age=3600"})
+
+
+@router.get("/reading-modified/{practice_id}")
+def get_modified_reading_set(
+    practice_id: str,
+    _: dict[str, Any] = Depends(require_supabase_user),
+) -> dict[str, Any]:
+    test_id = reading_modified.test_id_from_practice_id(practice_id)
+    test = reading_modified.get_set(test_id) if test_id else None
+    if not test:
+        raise HTTPException(status_code=404, detail="Reading set not found")
+    return test
+
+
+@router.post("/reading-modified/{practice_id}/start", status_code=status.HTTP_201_CREATED)
+def start_modified_reading_set(
+    practice_id: str,
+    user: dict[str, Any] = Depends(require_supabase_user),
+) -> dict[str, Any]:
+    test_id = reading_modified.test_id_from_practice_id(practice_id)
+    attempt = reading_modified.create_attempt(user["id"], test_id) if test_id else None
+    if not attempt:
+        raise HTTPException(status_code=404, detail="Reading set not found")
+    delete_user_cache(user["id"])
+    return {"session": attempt}
+
+
+@router.post("/reading-modified/sessions/{attempt_id}/submit")
+def submit_modified_reading_set(
+    attempt_id: UUID,
+    payload: ReadingSubmitRequest,
+    user: dict[str, Any] = Depends(require_supabase_user),
+) -> dict[str, Any]:
+    try:
+        result = reading_modified.submit_attempt(user["id"], attempt_id, payload.answers)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if not result:
+        raise HTTPException(status_code=404, detail="Reading attempt not found")
+    delete_user_cache(user["id"])
+    return result
+
+
+@router.get("/reading-modified/{practice_id}/results")
+def get_modified_reading_result(
+    practice_id: str,
+    user: dict[str, Any] = Depends(require_supabase_user),
+) -> dict[str, Any]:
+    test_id = reading_modified.test_id_from_practice_id(practice_id)
+    result = reading_modified.latest_result(user["id"], test_id) if test_id else None
+    if not result:
+        raise HTTPException(status_code=404, detail="Result not found")
+    return result
 
 
 app.include_router(router)
