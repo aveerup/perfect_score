@@ -19,19 +19,19 @@ const comfortOptions: {
 }[] = [
   {
     value: "comfortable",
-    label: "Comfortable",
+    label: "Easy",
     className: "border-emerald-200 bg-emerald-50/40 text-emerald-700 hover:bg-emerald-50",
     selectedClassName: "border-emerald-600 bg-emerald-500 text-white shadow-sm",
   },
   {
     value: "almost",
-    label: "Almost",
+    label: "Medium",
     className: "border-yellow-200 bg-yellow-50/40 text-yellow-700 hover:bg-yellow-50",
     selectedClassName: "border-yellow-500 bg-yellow-300 text-yellow-950 shadow-sm",
   },
   {
     value: "uncomfortable",
-    label: "Uncomfortable",
+    label: "Hard",
     className: "border-red-200 bg-red-50/40 text-red-700 hover:bg-red-50",
     selectedClassName: "border-red-600 bg-red-500 text-white shadow-sm",
   },
@@ -81,7 +81,7 @@ export default function VocabularyCategoryPage() {
       );
     } catch (requestError) {
       setWords(previousWords);
-      setComfortError(requestError instanceof Error ? requestError.message : "Could not save comfort level");
+      setComfortError(requestError instanceof Error ? requestError.message : "Could not save hardness level");
     } finally {
       setSavingComfort(null);
     }
@@ -130,13 +130,13 @@ export default function VocabularyCategoryPage() {
             <div className="group relative shrink-0">
               <button
                 type="button"
-                aria-label="Comfort level info"
+                aria-label="Hardness level info"
                 className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 transition hover:border-primary hover:text-primary focus:border-primary focus:text-primary focus:outline-none"
               >
                 <Info className="h-4 w-4" />
               </button>
               <div className="pointer-events-none absolute right-0 top-11 z-10 w-64 border border-slate-200 bg-white p-3 text-left text-xs font-bold leading-relaxed text-slate-600 opacity-0 shadow-lg transition group-hover:opacity-100 group-focus-within:opacity-100">
-                Choose how comfortable you are with the current flashcard&apos;s word. The quiz questions are made based on your comfort level.
+                Choose how hard the current flashcard&apos;s word is for you. The quiz questions are made based on your hardness level.
               </div>
             </div>
           </div>
