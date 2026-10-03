@@ -13,6 +13,7 @@ from uuid import UUID
 
 from .db import db_connection, fetch_all, fetch_one, jsonb
 from .typing_course_catalog import TYPING_COURSE, TYPING_LESSONS_BY_ID
+from .vocabulary_mastery import mastery_from_attempts
 
 
 LISTENING_ID_PREFIX = "listening-"
@@ -2679,8 +2680,30 @@ def save_typing_lesson_attempt(
     }
 
 
+def vocabulary_mastery(user_id: str, group: str | None = None) -> dict[str, dict[str, int]]:
+    group_filter = "and t.group_name = %s" if group else ""
+    params: tuple[Any, ...] = (user_id, group) if group else (user_id,)
+    attempts = fetch_all(
+        f"""
+        select id, selected_questions, result
+        from (
+          select a.id, a.selected_questions, a.result,
+                 row_number() over (
+                   partition by a.test_no order by a.submitted_at desc, a.id desc
+                 ) as recent_rank
+          from public.vocab_test_attempts a
+          join public.vocab_tests t on t.test_no = a.test_no
+          where a.user_id = %s and a.status = 'submitted' {group_filter}
+        ) recent
+        where recent_rank <= 8
+        """,
+        params,
+    )
+    return mastery_from_attempts(attempts)
+
+
 def list_vocabulary(user_id: str, group: str | None = None) -> list[dict[str, Any]]:
-    params: list[Any] = [user_id, user_id]
+    params: list[Any] = [user_id]
     group_filter = ""
     if group:
         group_filter = "where w.group_name = %s"
@@ -2688,11 +2711,8 @@ def list_vocabulary(user_id: str, group: str | None = None) -> list[dict[str, An
     rows = fetch_all(
         f"""
         select w.*,
-               coalesce(vp.mastery_level, 0) as mastery_level,
                coalesce(vc.comfort_level, 'uncomfortable') as comfort_level
         from public.vocabulary_words w
-        left join public.vocabulary_progress vp
-          on vp.word_id = w.id and vp.user_id = %s
         left join public.vocabulary_comfort vc
           on vc.vocabulary_id = w.id and vc.uid = %s
         {group_filter}
@@ -2700,6 +2720,7 @@ def list_vocabulary(user_id: str, group: str | None = None) -> list[dict[str, An
         """,
         tuple(params),
     )
+    mastery_by_word = vocabulary_mastery(user_id, group)
     return [
         {
             "id": row["id"],
@@ -2710,7 +2731,10 @@ def list_vocabulary(user_id: str, group: str | None = None) -> list[dict[str, An
             "banglaMeaning": row["bangla_meaning"],
             "sentence": row["sentence"],
             "sentenceBanglaMeaning": row["sentence_bangla_meaning"],
-            "masteryLevel": row["mastery_level"],
+            "masteryLevel": mastery_by_word[row["id"]]["level"] if row["id"] in mastery_by_word else None,
+            "masteryCorrect": mastery_by_word[row["id"]]["correct"] if row["id"] in mastery_by_word else 0,
+            "masteryQuestions": mastery_by_word[row["id"]]["total"] if row["id"] in mastery_by_word else 0,
+            "masteryTests": mastery_by_word[row["id"]]["tests"] if row["id"] in mastery_by_word else 0,
             "comfortLevel": row["comfort_level"],
         }
         for row in rows
@@ -2720,23 +2744,28 @@ def list_vocabulary(user_id: str, group: str | None = None) -> list[dict[str, An
 def vocabulary_groups(user_id: str) -> list[dict[str, Any]]:
     rows = fetch_all(
         """
-        select w.group_name, count(*) as word_count,
-          round(coalesce(avg(coalesce(vp.mastery_level, 0)), 0) / 4 * 100) as mastery
+        select w.group_name, w.id
         from public.vocabulary_words w
-        left join public.vocabulary_progress vp
-          on vp.word_id = w.id and vp.user_id = %s
-        group by w.group_name
+        order by w.group_name, w.id
         """,
-        (user_id,),
     )
-    summaries = [
-        {
-            "group": row["group_name"],
-            "wordCount": row["word_count"],
-            "mastery": int(row["mastery"]),
-        }
-        for row in rows
-    ]
+    mastery_by_word = vocabulary_mastery(user_id)
+    summaries_by_group: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        summary = summaries_by_group.setdefault(
+            row["group_name"], {"group": row["group_name"], "wordCount": 0, "mastery": 0, "assessedWordCount": 0},
+        )
+        summary["wordCount"] += 1
+        word_mastery = mastery_by_word.get(row["id"])
+        if word_mastery:
+            summary["assessedWordCount"] += 1
+            summary["mastery"] += word_mastery["level"]
+    summaries = list(summaries_by_group.values())
+    for summary in summaries:
+        summary["mastery"] = (
+            round(summary["mastery"] / (4 * summary["wordCount"]) * 100)
+            if summary["assessedWordCount"] else None
+        )
     return sorted(summaries, key=lambda item: vocabulary_test_no(item["group"]))
 
 

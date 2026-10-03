@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, CheckCircle2, Loader2, XCircle } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, invalidateApiCache } from "@/lib/api";
 import { TestLayout } from "@/components/test/TestLayout";
 import type { VocabQuizAttempt, VocabQuizResult, VocabQuizStartResponse } from "@/lib/types";
 
@@ -89,12 +89,15 @@ export default function VocabularyQuizPage() {
         durationSeconds,
       });
       setResult(response.result);
+      invalidateApiCache(`/vocabulary?group=${encodeURIComponent(group)}`);
+      invalidateApiCache("/vocabulary/groups");
+      invalidateApiCache("/dashboard");
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Could not submit quiz");
     } finally {
       setSubmitting(false);
     }
-  }, [answers, attempt, selectedQuestionIds, signature, submitting]);
+  }, [answers, attempt, group, selectedQuestionIds, signature, submitting]);
 
   const handleNext = () => {
     if (!attempt) return;

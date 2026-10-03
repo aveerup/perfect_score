@@ -86,7 +86,7 @@ export default function DashboardPage() {
           {data.vocabularyMastery.slice(0, 5).map((item) => (
             <div key={item.group} className="bg-slate-50 rounded-xl p-4">
               <p className="font-bold text-sm">{item.group}</p>
-              <p className="text-2xl font-black text-primary mt-2">{item.mastery}%</p>
+              <p className="text-2xl font-black text-primary mt-2">{item.mastery === null ? "Not assessed" : `${item.mastery}%`}</p>
             </div>
           ))}
         </div>

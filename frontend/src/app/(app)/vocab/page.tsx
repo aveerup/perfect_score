@@ -19,8 +19,9 @@ export default function VocabularyPage() {
             <BookOpen className="w-7 h-7 text-primary" />
             <h2 className="text-xl font-black mt-5">{item.group}</h2>
             <p className="text-sm text-slate-400 mt-1">{item.wordCount} words</p>
-            <div className="flex justify-between mt-6 text-sm font-bold"><span>Mastery</span><span>{item.mastery}%</span></div>
-            <div className="h-2 bg-slate-100 rounded-full mt-2 overflow-hidden"><div className="h-full bg-primary" style={{ width: `${item.mastery}%` }} /></div>
+            <div className="flex justify-between mt-6 text-sm font-bold"><span>Mastery</span><span>{item.mastery === null ? "Not assessed" : `${item.mastery}%`}</span></div>
+            <div className="h-2 bg-slate-100 rounded-full mt-2 overflow-hidden"><div className="h-full bg-primary" style={{ width: `${item.mastery ?? 0}%` }} /></div>
+            <p className="mt-2 text-xs text-slate-400">{item.assessedWordCount}/{item.wordCount} words assessed</p>
             <Link href={`/vocab/${encodeURIComponent(item.group)}`} className="mt-6 flex items-center justify-center gap-2 bg-slate-900 text-white rounded-xl py-3 font-bold">Study words <ChevronRight className="w-4 h-4" /></Link>
           </article>
         ))}

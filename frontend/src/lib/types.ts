@@ -42,7 +42,10 @@ export interface VocabularyWord {
   banglaMeaning: string;
   sentence: string;
   sentenceBanglaMeaning: string;
-  masteryLevel: 0 | 1 | 2 | 3 | 4;
+  masteryLevel: 0 | 1 | 2 | 3 | 4 | null;
+  masteryCorrect?: number;
+  masteryQuestions?: number;
+  masteryTests?: number;
   comfortLevel: VocabularyComfortLevel;
   group: VocabularyGroup;
 }
@@ -391,7 +394,8 @@ export interface TypingLessonAttemptResult {
 export interface VocabularyGroupSummary {
   group: VocabularyGroup;
   wordCount: number;
-  mastery: number;
+  mastery: number | null;
+  assessedWordCount: number;
 }
 
 export type VocabularyCategorySummary = VocabularyGroupSummary;
