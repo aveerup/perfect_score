@@ -9,7 +9,7 @@ import { SearchOverlay } from "@/components/layout/SearchOverlay";
 import { 
   Home, Video, PenTool, BookOpen, ClipboardCheck, Calendar,
   Search, User, Keyboard, LogOut, Settings, Trophy, CheckCircle2, ChevronDown,
-  ShieldCheck,
+  ShieldCheck, PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
 
 const navItems = [
@@ -65,6 +65,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [planMenuOpen, setPlanMenuOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   useLayoutEffect(() => {
     document.documentElement.classList.remove("dark");
@@ -140,7 +141,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen bg-surface">
       {/* DESKTOP SIDEBAR */}
-      <aside className="hidden md:flex flex-col w-20 lg:w-72 border-r border-slate-200/60 fixed top-0 left-0 h-full bg-white z-20 transition-all duration-300">
+      <aside
+        id="app-sidebar"
+        aria-hidden={sidebarCollapsed}
+        inert={sidebarCollapsed}
+        className={`hidden md:flex flex-col w-20 lg:w-72 border-r border-slate-200/60 fixed top-0 left-0 h-full bg-white z-20 transition-transform duration-300 ${sidebarCollapsed ? "-translate-x-full" : "translate-x-0"}`}
+      >
         {/* Logo */}
         <div className="h-20 flex items-center px-8 border-b border-slate-100 overflow-hidden">
           <Link href="/dashboard" className="flex items-center gap-3">
@@ -282,12 +288,28 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* MAIN CONTENT */}
-      <div className="flex-1 md:ml-20 lg:ml-72 flex flex-col min-h-screen pb-20 md:pb-0 transition-all duration-300">
+      <div className={`flex-1 flex flex-col min-h-screen pb-20 md:pb-0 transition-all duration-300 ${sidebarCollapsed ? "md:ml-0" : "md:ml-20 lg:ml-72"}`}>
         {/* TOP BAR */}
         <header className="h-20 border-b border-slate-200/60 sticky top-0 bg-white/80 backdrop-blur-md z-10 flex items-center justify-between px-8 lg:px-12">
-          <div className="flex flex-col">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-0.5">Platform</span>
-            <h1 className="text-2xl font-black tracking-tight text-slate-900 leading-none">{getTitle()}</h1>
+          <div className="flex items-center gap-4">
+            <button
+              type="button"
+              onClick={() => {
+                setSidebarCollapsed((collapsed) => !collapsed);
+                setPlanMenuOpen(false);
+              }}
+              aria-controls="app-sidebar"
+              aria-expanded={!sidebarCollapsed}
+              aria-label={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
+              title={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
+              className="hidden md:flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            >
+              {sidebarCollapsed ? <PanelLeftOpen className="h-5 w-5 text-green-600" /> : <PanelLeftClose className="h-5 w-5 text-red-600" />}
+            </button>
+            <div className="flex flex-col">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mb-0.5">Platform</span>
+              <h1 className="text-2xl font-black tracking-tight text-slate-900 leading-none">{getTitle()}</h1>
+            </div>
           </div>
 
           <div className="flex items-center gap-6">
