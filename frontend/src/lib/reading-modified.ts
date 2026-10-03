@@ -62,6 +62,15 @@ export type CompleteSentenceComponent = {
 };
 
 export type ReadingComponent = PassageComponent | FillGapsComponent | McqComponent | CompleteSentenceComponent;
+export type ReadingQuestionComponent = Exclude<ReadingComponent, PassageComponent>;
+
+export type ReadingPart = {
+  id: string;
+  number: number | null;
+  passage: PassageComponent | null;
+  sections: { component: ReadingQuestionComponent; startNumber: number }[];
+  questions: { id: string; number: number }[];
+};
 
 export type ReadingSet = {
   id: string;
@@ -96,6 +105,48 @@ export function totalQuestions(components: ReadingComponent[]): number {
     (count, component) => count + (component.type === "passage" ? 0 : component.questions.length),
     0,
   );
+}
+
+export function groupReadingParts(components: ReadingComponent[]): ReadingPart[] {
+  const parts: ReadingPart[] = [];
+  let currentPart: ReadingPart | null = null;
+  let passageNumber = 0;
+  let questionNumber = 0;
+
+  for (const component of components) {
+    if (component.type === "passage") {
+      passageNumber += 1;
+      currentPart = {
+        id: component.id,
+        number: passageNumber,
+        passage: component,
+        sections: [],
+        questions: [],
+      };
+      parts.push(currentPart);
+      continue;
+    }
+
+    // Keep older sets with questions before their first passage usable.
+    if (!currentPart) {
+      currentPart = {
+        id: "questions-before-first-passage",
+        number: null,
+        passage: null,
+        sections: [],
+        questions: [],
+      };
+      parts.push(currentPart);
+    }
+
+    currentPart.sections.push({ component, startNumber: questionNumber });
+    for (const question of component.questions) {
+      questionNumber += 1;
+      currentPart.questions.push({ id: question.id, number: questionNumber });
+    }
+  }
+
+  return parts;
 }
 
 export function letterLabel(index: number): string {

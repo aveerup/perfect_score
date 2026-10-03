@@ -115,6 +115,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   };
 
   const visibleNavItems = user?.role === "admin" ? [...navItems, adminNavItem] : navItems;
+  const isModifiedReadingTest = /^\/practice\/reading-modified-[^/]+$/.test(pathname);
 
   const getTitle = () => {
     const item = visibleNavItems.find(i => pathname.startsWith(i.href));
@@ -139,7 +140,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     .toUpperCase();
 
   return (
-    <div className="flex min-h-screen bg-surface">
+    <div className={"flex min-h-screen bg-surface " + (isModifiedReadingTest ? "md:h-dvh md:min-h-0 md:overflow-hidden" : "")}>
       {/* DESKTOP SIDEBAR */}
       <aside
         id="app-sidebar"
@@ -288,9 +289,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* MAIN CONTENT */}
-      <div className={`flex-1 flex flex-col min-h-screen pb-20 md:pb-0 transition-all duration-300 ${sidebarCollapsed ? "md:ml-0" : "md:ml-20 lg:ml-72"}`}>
+      <div className={`min-w-0 flex-1 flex flex-col min-h-screen pb-20 md:pb-0 transition-all duration-300 ${isModifiedReadingTest ? "md:h-dvh md:min-h-0 md:overflow-hidden" : ""} ${sidebarCollapsed ? "md:ml-0" : "md:ml-20 lg:ml-72"}`}>
         {/* TOP BAR */}
-        <header className="h-20 border-b border-slate-200/60 sticky top-0 bg-white/80 backdrop-blur-md z-10 flex items-center justify-between px-8 lg:px-12">
+        <header className="h-20 shrink-0 border-b border-slate-200/60 sticky top-0 bg-white/80 backdrop-blur-md z-10 flex items-center justify-between px-8 lg:px-12">
           <div className="flex items-center gap-4">
             <button
               type="button"
@@ -327,9 +328,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </header>
 
         {/* PAGE CONTENT */}
-        <main className="flex-1 p-8 lg:p-12 max-w-7xl mx-auto w-full">
+        <main className={"min-w-0 flex-1 w-full " + (isModifiedReadingTest ? "overflow-x-hidden md:overflow-hidden md:min-h-0 p-0 max-w-none" : "p-8 lg:p-12 max-w-7xl mx-auto")}>
 
           <motion.div
+            className={isModifiedReadingTest ? "w-full min-w-0 md:h-full md:overflow-hidden" : undefined}
             key={pathname}
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
